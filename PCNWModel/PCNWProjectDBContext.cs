@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace SyncRoutineWS.PCNWModel;
 
-public partial class PCNWProjectDBContext : DbContext
+public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 {
     public PCNWProjectDBContext()
     {
@@ -41,6 +43,8 @@ public partial class PCNWProjectDBContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.Entity<Addendum>(entity =>
         {
             entity.HasKey(e => e.AddendaId).HasName("PK_tblAddenda");
@@ -381,7 +385,11 @@ public partial class PCNWProjectDBContext : DbContext
         {
             entity.HasKey(e => e.ProjId).HasName("PK_tblProject");
 
-            entity.ToTable("Project", tb => tb.HasTrigger("tr_Project_U"));
+            entity.ToTable("Project", tb =>
+            {
+                tb.HasTrigger("tr_Project_U");
+                tb.HasTrigger("trg_generate_projnumber");
+            });
 
             entity.HasIndex(e => e.LocState, "LocState");
 

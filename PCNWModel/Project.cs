@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SyncRoutineWS.PCNWModel;
 
+[Table("Project")]
 public partial class Project
 {
     public int ProjId { get; set; }

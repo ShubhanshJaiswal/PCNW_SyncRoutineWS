@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Identity;
 
 namespace SyncRoutineWS
 {
@@ -24,13 +25,25 @@ namespace SyncRoutineWS
              })
                 .ConfigureServices((hostContext, services) =>
                 {
+                    services.AddHostedService<Worker>();
                     services.AddDbContext<OCPCProjectDBContext>(options =>
-                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("OCPCDefaultConnection")),ServiceLifetime.Singleton);
+                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("OCPCDefaultConnection"), options => options.CommandTimeout(180)),ServiceLifetime.Singleton);
+
 
                     services.AddDbContext<PCNWProjectDBContext>(options =>
-                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("PCNWDefaultConnection")), ServiceLifetime.Singleton);
+                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("PCNWDefaultConnection"), options => options.CommandTimeout(180)), ServiceLifetime.Singleton);
 
-                    services.AddHostedService<Worker>();
+                    services.AddIdentity<IdentityUser, IdentityRole>()
+                    .AddDefaultTokenProviders()
+                    .AddEntityFrameworkStores<PCNWProjectDBContext>();
+                    services.Configure<IdentityOptions>(options =>
+                    {
+                        options.Password.RequireDigit = false; 
+                        options.Password.RequireLowercase = false; 
+                        options.Password.RequireUppercase = false; 
+                        options.Password.RequireNonAlphanumeric = false; 
+                        options.Password.RequiredLength = 1; 
+                    });
                 })
                 .UseWindowsService(); 
     }

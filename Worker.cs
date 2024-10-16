@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Identity.Client;
@@ -22,13 +25,17 @@ namespace SyncRoutineWS
         private readonly IConfiguration _configuration;
         private string LogFileDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
         private readonly ILogger<Worker> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
+        private UserManager<IdentityUser> _userManager;
+        private RoleManager<IdentityRole> _roleManager;
 
-        public Worker(ILogger<Worker> logger, OCPCProjectDBContext OCPCcont1, PCNWProjectDBContext PCNWcont2, IConfiguration configuration)
+        public Worker(IServiceScopeFactory scopeFactory, ILogger<Worker> logger, OCPCProjectDBContext OCPCcont1, PCNWProjectDBContext PCNWcont2, IConfiguration configuration)
         {
             _logger = logger;
             _configuration = configuration;
             _OCOCContext = OCPCcont1;
             _PCNWContext = PCNWcont2;
+            _scopeFactory = scopeFactory;
 
             if (configuration != null)
             {
@@ -47,6 +54,7 @@ namespace SyncRoutineWS
         {
             if (DoWork != null)
             {
+
                 TimerCallback doWork = DoWork;
                 _timer = new Timer(doWork, null, TimeSpan.Zero, TimeSpan.FromMinutes(elapesedTime));
                 stoppingToken.Register(() => _timer?.Change(Timeout.Infinite, 0));
@@ -66,34 +74,100 @@ namespace SyncRoutineWS
 
             try
             {
-                // Test1 ->> Test2
-                AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest STARTED");
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    _userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+                    _roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
-                #region SYNC FROM OCPCLive - PCNWTest
+                    // Test1 ->> Test2
+                    AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest STARTED");
 
-                //  List<TblMember> tblOCPCMember = (from mem in _OCOCContext.TblMembers where mem.SyncStatus == 1 || mem.SyncStatus == 2 select mem).ToList();
-                // List<TblContact> tblOCPCContact = (from con in _OCOCContext.TblContacts where con.SyncStatus == 1 || con.SyncStatus == 2 select con).ToList();
-                // ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+                    #region SYNC FROM OCPCLive - PCNWTest
 
-                List<TblProject> tblProjects = (from proj in _OCOCContext.TblProjects where proj.ProjId == 237933 && (proj.SyncStatus == 1 || proj.SyncStatus == 2) select proj).ToList();
-                List<TblProjCounty> tblProjCounty = (from projCouny in _OCOCContext.TblProjCounties where projCouny.ProjId == tblProjects[0].ProjId && (projCouny.SyncStatus == 1 || projCouny.SyncStatus == 2) select projCouny).ToList();
-                ProcessProjectFunctionality(tblProjects, tblProjCounty);
+                    //Member Sync code
+                    var businessEntityEmails = _PCNWContext.BusinessEntities
+                        .Select(be => be.BusinessEntityEmail)
+                        .ToHashSet();
 
-                List<TblArchOwner> tblArch = (from arch in _OCOCContext.TblArchOwners where arch.Id == 11314 && arch.SyncStatus == 1 || arch.SyncStatus == 2 select arch).ToList();
-                List<TblProjAo> tblProArc = (from po in _OCOCContext.TblProjAos where po.ArchOwnerId == 11314 && po.SyncStatus == 1 || po.SyncStatus == 2 select po).ToList();
-                ProcessArchOwnerFunctionality(tblArch, tblProArc);
+                    Func<string, int, bool> emailCheck = (email, syncStatus) =>
+                        syncStatus == 1 && !businessEntityEmails.Contains(email);
 
-                List<TblContractor> tblCont = (from Contt in _OCOCContext.TblContractors where Contt.Id == 40779 && Contt.SyncStatus == 1 || Contt.SyncStatus == 2 select Contt).ToList();
-                List<TblProjCon> tblProCon = (from pc in _OCOCContext.TblProjCons where pc.ConId == 40779 && pc.SyncStatus == 1 || pc.SyncStatus == 2 select pc).ToList();
-                ProcessContractorFunctionality(tblCont, tblProCon);
+                    var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+                                         join con in _OCOCContext.TblContacts
+                                         on mem.Id equals con.Id
+                                         where mem.Id==3621 && (con.SyncStatus == 1 && !businessEntityEmails.Contains(con.Email))
+                                         || con.SyncStatus == 2
+                                         select mem)
+                                         .Take(1).OrderBy(m=>m.Id)
+                                         .AsNoTracking()
+                                         .ToList();
 
-                //List<TblAddendum> tblAddenda = (from adden in _OCOCContext.TblAddenda where adden.SyncStatus == 1 || adden.SyncStatus == 2 select adden).ToList();
-                //ProcessAddendaFunctionality(tblAddenda);
+                    var memberids = tblOCPCMember.Select(m => m.Id).ToList();
 
-                #endregion SYNC FROM OCPCLive - PCNWTest
+                    var tblOCPCContact = _OCOCContext.TblContacts.Where(con => (con.SyncStatus == 1 || con.SyncStatus == 2))
+                        .AsNoTracking()
+                        .ToList();
 
-                AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest COMPLETED");
-                Console.WriteLine("Sync Completed....");
+                    tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
+                    ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+
+                    //project sync code
+
+                    //var tblProjects = _OCOCContext.TblProjects
+                    //    .Where(proj => proj.SyncStatus == 1 || proj.SyncStatus == 2).Take(1)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //var tblProjCounty = tblProjects.Any()
+                    //    ? _OCOCContext.TblProjCounties
+                    //        .Where(projCounty => projCounty.ProjId == tblProjects[0].ProjId &&
+                    //                             (projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2))
+                    //        .AsNoTracking()
+                    //        .ToList()
+                    //    : new List<TblProjCounty>();
+
+                    //ProcessProjectFunctionality(tblProjects, tblProjCounty);
+
+
+
+                    // Query Arch Owners
+                    //var tblArch = _OCOCContext.TblArchOwners
+                    //    .Where(arch => emailCheck(arch.Email, arch.SyncStatus) || arch.SyncStatus == 2)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //var tblProArc = _OCOCContext.TblProjAos
+                    //    .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //ProcessArchOwnerFunctionality(tblArch, tblProArc);
+
+                    //var tblCont = _OCOCContext.TblContractors
+                    //    .Where(cont => emailCheck(cont.Email, cont.SyncStatus) || cont.SyncStatus == 2)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //var tblProCon = _OCOCContext.TblProjCons
+                    //    .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //ProcessContractorFunctionality(tblCont, tblProCon);
+
+                    //var tblAddenda = _OCOCContext.TblAddenda
+                    //    .Where(adden => adden.SyncStatus == 1 || adden.SyncStatus == 2)
+                    //    .AsNoTracking()
+                    //    .ToList();
+
+                    //ProcessAddendaFunctionality(tblAddenda);
+
+
+                    #endregion SYNC FROM OCPCLive - PCNWTest
+
+                    AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest COMPLETED");
+                    Console.WriteLine("Sync Completed....");
+                }
             }
             catch (Exception ex)
             {
@@ -308,7 +382,7 @@ namespace SyncRoutineWS
                                         _PCNWContext.Entry(propEnty).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     }
 
-                                   
+
                                     _PCNWContext.SaveChanges();
 
                                     tpc.SyncStatus = 3;
@@ -481,7 +555,7 @@ namespace SyncRoutineWS
                                         _PCNWContext.Entry(propEnty).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     }
                                     _PCNWContext.SaveChanges();
-                                    
+
                                     ProjAO.SyncStatus = 3;
                                     _OCOCContext.Entry(ProjAO).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     _OCOCContext.SaveChanges();
@@ -539,132 +613,146 @@ namespace SyncRoutineWS
                     {
                         Project propProject;
                         int RecentProjectId = 0;
+
+                        var data = _PCNWContext.Projects.AsNoTracking().FirstOrDefault(m => m.SyncProId == proj.ProjId);
+
+                        if (data != null)
+                        {
+                            var record = _OCOCContext.TblProjects.AsNoTracking().FirstOrDefault(m => m.ProjId == proj.ProjId);
+                            record.SyncStatus = 3;
+                            _OCOCContext.Entry(record).State = EntityState.Modified;
+                            _OCOCContext.SaveChanges();
+                            continue;
+                        }
+
                         if (proj.SyncStatus == 1)
                         {
-                            propProject = new Project();
-                            propProject.AdSpacer = proj.AdSpacer;
-                            propProject.ArrivalDt = proj.ArrivalDt;
-                            propProject.BendPc = proj.BendPc;
-                            propProject.BidBond = proj.BidBond;
-                            propProject.BidDt = proj.BidDt;
-                            propProject.BidDt2 = proj.BidDt2;
-                            propProject.BidDt3 = proj.BidDt3;
-                            propProject.BidDt4 = proj.BidDt4;
-                            propProject.BidNo = proj.BidNo;
-                            propProject.BidPkg = proj.BidPkg;
-                            propProject.Brnote = proj.Brnote;
-                            propProject.BrresultsFrom = proj.BrresultsFrom;
-                            propProject.BuildSolrIndex = proj.BuildSolrIndex;
-                            propProject.CallBack = proj.CallBack;
-                            propProject.CheckSentDt = proj.CheckSentDt;
-                            propProject.CompleteDt = proj.CompleteDt;
-                            propProject.Contact = proj.Contact;
-                            propProject.Deposit = proj.Deposit;
-                            propProject.Dfnote = proj.Dfnote;
-                            propProject.DiPath = proj.DiPath;
-                            propProject.DirtId = proj.DirtId;
-                            propProject.DrawingPath = proj.DrawingPath;
-                            propProject.DrawingVols = proj.DrawingVols;
-                            propProject.Dup1 = proj.Dup1;
-                            propProject.Dup2 = proj.Dup2;
-                            propProject.DupArDt = proj.DupArDt;
-                            propProject.DupTitle = proj.DupTitle;
-                            propProject.DwChk = proj.DwChk;
-                            propProject.EstCost = proj.EstCost;
-                            propProject.EstCost2 = proj.EstCost2;
-                            propProject.EstCost3 = proj.EstCost3;
-                            propProject.EstCost4 = proj.EstCost4;
-                            propProject.EstCostNum = proj.EstCostNum;
-                            propProject.EstCostNum2 = proj.EstCostNum2;
-                            propProject.EstCostNum3 = proj.EstCostNum3;
-                            propProject.EstCostNum4 = proj.EstCostNum4;
-                            propProject.ExtendedDt = proj.ExtendedDt;
-                            propProject.FutureWork = proj.FutureWork;
-                            //propProject.GeogPt=proj.geog
-                            propProject.Hold = proj.Hold;
-                            propProject.ImportDt = proj.ImportDt;
-                            //propProject.IndexPDFFiles = proj.IndexPDFFiles;
-                            propProject.InternalNote = proj.InternalNote;
-                            propProject.InternetDownload = proj.InternetDownload;
-                            propProject.IssuingOffice = proj.IssuingOffice;
-                            propProject.LastBidDt = proj.LastBidDt;
-                            propProject.Latitude = proj.Latitude;
-                            propProject.LocAddr1 = proj.LocAddr1;
-                            propProject.LocAddr2 = proj.LocAddr2;
-                            propProject.LocCity = proj.LocCity;
-                            propProject.LocCity2 = proj.LocCity2;
-                            propProject.LocCity3 = proj.LocCity3;
-                            propProject.LocState = proj.LocState;
-                            propProject.LocState2 = proj.LocState2;
-                            propProject.LocState3 = proj.LocState3;
-                            propProject.LocZip = proj.LocZip;
-                            propProject.Longitude = proj.Longitude;
-                            propProject.Mandatory = proj.Mandatory;
-                            propProject.Mandatory2 = proj.Mandatory2;
-                            propProject.MaxViewPath = proj.MaxViewPath;
-                            propProject.NonRefundAmt = proj.NonRefundAmt;
-                            propProject.NoPrint = proj.NoPrint;
-                            propProject.NoSpecs = proj.NoSpecs;
-                            propProject.OnlineNote = proj.OnlineNote;
-                            propProject.Phldone = proj.Phldone;
-                            propProject.Phlnote = proj.Phlnote;
-                            propProject.Phltimestamp = proj.Phltimestamp;
-                            propProject.PhlwebLink = proj.PhlwebLink;
-                            propProject.PlanNo = proj.PlanNo;
-                            propProject.PlanNoMain = proj.PlanNoMain;
-                            propProject.PrebidAnd = proj.PrebidAnd;
-                            propProject.PreBidDt = proj.PreBidDt;
-                            propProject.PreBidDt2 = proj.PreBidDt2;
-                            propProject.PreBidLoc = proj.PreBidLoc;
-                            propProject.PreBidLoc2 = proj.PreBidLoc2;
-                            propProject.PrebidOr = proj.PrebidOr;
-                            propProject.PrevailingWage = proj.PrevailingWage;
-                            propProject.ProjIdMain = proj.ProjIdMain;
-                            propProject.ProjNote = proj.ProjNote;
-                            propProject.ProjTimeStamp = proj.ProjTimeStamp;
-                            propProject.ProjTypeId = proj.ProjTypeId;
-                            propProject.Publish = proj.Publish;
-                            propProject.PublishedFrom = proj.PublishedFrom;
-                            propProject.PublishedFromDt = proj.PublishedFromDt;
-                            propProject.Recycle = proj.Recycle;
-                            propProject.RefundAmt = proj.RefundAmt;
-                            propProject.RegionId = proj.RegionId;
-                            propProject.RenChk = proj.RenChk;
-                            propProject.ResultDt = proj.ResultDt;
-                            propProject.S11x17 = proj.S11x17;
-                            propProject.S18x24 = proj.S18x24;
-                            propProject.S24x36 = proj.S24x36;
-                            propProject.S30x42 = proj.S30x42;
-                            propProject.S36x48 = proj.S36x48;
-                            propProject.ShipCheck = proj.ShipCheck;
-                            propProject.ShowBr = proj.ShowBr;
-                            propProject.ShowOnWeb = proj.ShowOnWeb;
-                            propProject.ShowToAll = proj.ShowToAll;
-                            propProject.SolrIndexDt = proj.SolrIndexDt;
-                            propProject.SolrIndexPdfdt = proj.SolrIndexPdfdt;
-                            propProject.SpcChk = proj.SpcChk;
-                            propProject.SpecPath = proj.SpecPath;
-                            propProject.SpecsOnPlans = proj.SpecsOnPlans;
-                            propProject.SpecVols = proj.SpecVols;
-                            propProject.Story = proj.Story;
-                            propProject.StoryUnf = proj.StoryUnf;
-                            propProject.StrAddenda = proj.StrAddenda;
-                            propProject.StrBidDt = proj.StrBidDt;
-                            propProject.StrBidDt2 = proj.StrBidDt2;
-                            propProject.StrBidDt3 = proj.StrBidDt3;
-                            propProject.StrBidDt4 = proj.StrBidDt4;
-                            propProject.StrPreBidDt = proj.StrPreBidDt;
-                            propProject.StrPreBidDt2 = proj.StrPreBidDt2;
-                            propProject.SubApprov = proj.SubApprov;
-                            propProject.Title = proj.Title;
-                            propProject.TopChk = proj.TopChk;
-                            propProject.Uc = proj.Uc;
-                            propProject.Ucpublic = proj.Ucpublic;
-                            propProject.Ucpwd = proj.Ucpwd;
-                            propProject.Ucpwd2 = proj.Ucpwd2;
-                            propProject.UnderCounter = proj.UnderCounter;
-                            propProject.SyncStatus = 0;
-                            propProject.SyncProId = proj.ProjId;
+                            propProject = new Project
+                            {
+                                AdSpacer = proj.AdSpacer,
+                                ArrivalDt = proj.ArrivalDt,
+                                BendPc = proj.BendPc,
+                                BidBond = proj.BidBond,
+                                BidDt = proj.BidDt,
+                                BidDt2 = proj.BidDt2,
+                                BidDt3 = proj.BidDt3,
+                                BidDt4 = proj.BidDt4,
+                                BidNo = proj.BidNo,
+                                BidPkg = proj.BidPkg,
+                                Brnote = proj.Brnote,
+                                BrresultsFrom = proj.BrresultsFrom,
+                                BuildSolrIndex = proj.BuildSolrIndex,
+                                CallBack = proj.CallBack,
+                                CheckSentDt = proj.CheckSentDt,
+                                CompleteDt = proj.CompleteDt,
+                                Contact = proj.Contact,
+                                Deposit = proj.Deposit,
+                                Dfnote = proj.Dfnote,
+                                DiPath = proj.DiPath,
+                                DirtId = proj.DirtId,
+                                DrawingPath = proj.DrawingPath,
+                                DrawingVols = proj.DrawingVols,
+                                Dup1 = proj.Dup1,
+                                Dup2 = proj.Dup2,
+                                DupArDt = proj.DupArDt,
+                                DupTitle = proj.DupTitle,
+                                DwChk = proj.DwChk,
+                                EstCost = proj.EstCost,
+                                EstCost2 = proj.EstCost2,
+                                EstCost3 = proj.EstCost3,
+                                EstCost4 = proj.EstCost4,
+                                EstCostNum = proj.EstCostNum,
+                                EstCostNum2 = proj.EstCostNum2,
+                                EstCostNum3 = proj.EstCostNum3,
+                                EstCostNum4 = proj.EstCostNum4,
+                                ExtendedDt = proj.ExtendedDt,
+                                FutureWork = proj.FutureWork,
+                                //propProject.GeogPt=proj.geog
+                                Hold = proj.Hold,
+                                ImportDt = proj.ImportDt,
+                                //propProject.IndexPDFFiles = proj.IndexPDFFiles;
+                                InternalNote = proj.InternalNote,
+                                InternetDownload = proj.InternetDownload,
+                                IssuingOffice = proj.IssuingOffice,
+                                LastBidDt = proj.LastBidDt,
+                                Latitude = proj.Latitude,
+                                LocAddr1 = proj.LocAddr1,
+                                LocAddr2 = proj.LocAddr2,
+                                LocCity = proj.LocCity,
+                                LocCity2 = proj.LocCity2,
+                                LocCity3 = proj.LocCity3,
+                                LocState = proj.LocState,
+                                LocState2 = proj.LocState2,
+                                LocState3 = proj.LocState3,
+                                LocZip = proj.LocZip,
+                                Longitude = proj.Longitude,
+                                Mandatory = proj.Mandatory,
+                                Mandatory2 = proj.Mandatory2,
+                                MaxViewPath = proj.MaxViewPath,
+                                NonRefundAmt = proj.NonRefundAmt,
+                                NoPrint = proj.NoPrint,
+                                NoSpecs = proj.NoSpecs,
+                                OnlineNote = proj.OnlineNote,
+                                Phldone = proj.Phldone,
+                                Phlnote = proj.Phlnote,
+                                Phltimestamp = proj.Phltimestamp,
+                                PhlwebLink = proj.PhlwebLink,
+                                PlanNo = proj.PlanNo,
+                                PlanNoMain = proj.PlanNoMain,
+                                PrebidAnd = proj.PrebidAnd,
+                                PreBidDt = proj.PreBidDt,
+                                PreBidDt2 = proj.PreBidDt2,
+                                PreBidLoc = proj.PreBidLoc,
+                                PreBidLoc2 = proj.PreBidLoc2,
+                                PrebidOr = proj.PrebidOr,
+                                PrevailingWage = proj.PrevailingWage,
+                                ProjIdMain = proj.ProjIdMain,
+                                ProjNote = proj.ProjNote,
+                                ProjTimeStamp = proj.ProjTimeStamp,
+                                ProjTypeId = proj.ProjTypeId,
+                                Publish = proj.Publish,
+                                PublishedFrom = proj.PublishedFrom,
+                                PublishedFromDt = proj.PublishedFromDt,
+                                Recycle = proj.Recycle,
+                                RefundAmt = proj.RefundAmt,
+                                RegionId = proj.RegionId,
+                                RenChk = proj.RenChk,
+                                ResultDt = proj.ResultDt,
+                                S11x17 = proj.S11x17,
+                                S18x24 = proj.S18x24,
+                                S24x36 = proj.S24x36,
+                                S30x42 = proj.S30x42,
+                                S36x48 = proj.S36x48,
+                                ShipCheck = proj.ShipCheck,
+                                ShowBr = proj.ShowBr,
+                                ShowOnWeb = proj.ShowOnWeb,
+                                ShowToAll = proj.ShowToAll,
+                                SolrIndexDt = proj.SolrIndexDt,
+                                SolrIndexPdfdt = proj.SolrIndexPdfdt,
+                                SpcChk = proj.SpcChk,
+                                SpecPath = proj.SpecPath,
+                                SpecsOnPlans = proj.SpecsOnPlans,
+                                SpecVols = proj.SpecVols,
+                                Story = proj.Story,
+                                StoryUnf = proj.StoryUnf,
+                                StrAddenda = proj.StrAddenda,
+                                StrBidDt = proj.StrBidDt,
+                                StrBidDt2 = proj.StrBidDt2,
+                                StrBidDt3 = proj.StrBidDt3,
+                                StrBidDt4 = proj.StrBidDt4,
+                                StrPreBidDt = proj.StrPreBidDt,
+                                StrPreBidDt2 = proj.StrPreBidDt2,
+                                SubApprov = proj.SubApprov,
+                                Title = proj.Title,
+                                TopChk = proj.TopChk,
+                                Uc = proj.Uc,
+                                Ucpublic = proj.Ucpublic,
+                                Ucpwd = proj.Ucpwd,
+                                Ucpwd2 = proj.Ucpwd2,
+                                UnderCounter = proj.UnderCounter,
+                                SyncStatus = 0,
+                                SyncProId = proj.ProjId
+                            };
                             _PCNWContext.Projects.Add(propProject);
                             _PCNWContext.SaveChanges();
 
@@ -871,7 +959,7 @@ namespace SyncRoutineWS
                                 propPBI.Location = proj.PreBidLoc;
                                 propPBI.PreBidAnd = (bool)proj.PrebidAnd;
                                 propPBI.ProjId = RecentProjectId;
-                                propPBI.UndecidedPreBid = null;
+                                propPBI.UndecidedPreBid = false;
                                 propPBI.Pst = "PT";
                                 propPBI.SyncStatus = 0;
                                 _PCNWContext.PreBidInfos.Add(propPBI);
@@ -1010,19 +1098,21 @@ namespace SyncRoutineWS
                     {
                         BusinessEntity propBussEnt;
                         if (member.SyncStatus == 1)
-                        {
-                            propBussEnt = new BusinessEntity();
-                            propBussEnt.BusinessEntityName = member.Company;
-                            propBussEnt.BusinessEntityEmail = member.Email;
-                            propBussEnt.BusinessEntityPhone = "";
-                            propBussEnt.IsMember = true;
-                            propBussEnt.IsContractor = false;
-                            propBussEnt.IsArchitect = false;
-                            propBussEnt.OldMemId = member.Id;
-                            propBussEnt.OldConId = 0;
-                            propBussEnt.OldAoId = 0;
-                            propBussEnt.SyncStatus = 0;
-                            propBussEnt.SyncMemId = member.Id;
+                        {                            
+                            propBussEnt = new BusinessEntity
+                            {
+                                BusinessEntityName = member.Company,
+                                BusinessEntityEmail = member.Email,
+                                BusinessEntityPhone = "",
+                                IsMember = true,
+                                IsContractor = false,
+                                IsArchitect = false,
+                                OldMemId = member.Id,
+                                OldConId = 0,
+                                OldAoId = 0,
+                                SyncStatus = 0,
+                                SyncMemId = member.Id
+                            };
                             _PCNWContext.BusinessEntities.Add(propBussEnt);
                             _PCNWContext.SaveChanges();
 
@@ -1049,43 +1139,84 @@ namespace SyncRoutineWS
                         _OCOCContext.SaveChanges();
                         AppendMessageToFile(LogFileDirectory, "->> tblMember MEMBER ID " + member.Id + " SYNC STATUS UPDATED");
 
-                        TblContact? contact = (from c in tblOCPCContact where c.Id == member.Id && (c.SyncStatus == 1 || c.SyncStatus == 2) select c).FirstOrDefault();
-                        if (contact != null)
+                        var contacts = (from c in tblOCPCContact where c.Id == member.Id && (c.SyncStatus == 1 || c.SyncStatus == 2) select c).ToList();
+                        foreach (var contact in contacts)
                         {
-                            Contact propCont;
-                            if (contact.SyncStatus == 1)
+                            if (contact != null)
                             {
-                                propCont = new Contact();
-                                propCont.ContactName = contact.Contact;
-                                propCont.ContactEmail = contact.Email;
-                                propCont.BusinessEntityId = lastBusinessEntityId;
-                                propCont.ContactPhone = contact.Phone;
-                                propCont.ContactTitle = contact.Title;
-                                propCont.SyncStatus = 0;
-                                propCont.SyncConId = contact.ConId;
-                                _PCNWContext.Contacts.Add(propCont);
+                                Contact propCont;
+
+                                if (contact.SyncStatus == 1)
+                                {
+                                    var userid = new Guid();
+                                    bool mainContactExists = true ;
+                                    if (!string.IsNullOrEmpty(contact.Email) && !string.IsNullOrEmpty(contact.Email))
+                                    {
+                                        var user = new IdentityUser
+                                        {
+                                            Email = contact.Email,
+                                            UserName = contact.Email
+                                        };
+                                        var pass = tblOCPCContact.FirstOrDefault(c => c.Id == member.Id).Password;
+
+                                        var result = _userManager.CreateAsync(user, pass).GetAwaiter().GetResult();
+                                        if (!result.Succeeded)
+                                        {
+                                            throw new Exception(result.Errors.ToString());
+                                        }
+
+                                        var addrole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
+                                        if (!addrole.Succeeded)
+                                        {
+                                            throw new Exception(addrole.Errors.ToString());
+                                        }
+                                        if (!Guid.TryParse(user.Id, out userid)) // Try to parse the string to Guid
+                                        {
+                                            throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
+                                        }
+
+                                        mainContactExists = _PCNWContext.Contacts.Any(c => c.BusinessEntityId == lastBusinessEntityId && c.MainContact == true);
+                                    }
+                                    propCont = new Contact
+                                    {
+                                        UserId = userid,
+                                        CompType = 1,
+                                        MainContact = !mainContactExists,
+                                        Active = !member.Inactive,
+                                        ContactName = contact.Contact,
+                                        ContactEmail = contact.Email,
+                                        Password = contact.Password,
+                                        BusinessEntityId = lastBusinessEntityId,
+                                        ContactPhone = contact.Phone,
+                                        ContactTitle = contact.Title,
+                                        SyncStatus = 0,
+                                        SyncConId = contact.ConId
+
+                                    };
+                                    _PCNWContext.Contacts.Add(propCont);
+                                }
+                                else if (contact.SyncStatus == 2)
+                                {
+                                    propCont = (from con in _PCNWContext.Contacts where con.BusinessEntityId == lastBusinessEntityId select con).FirstOrDefault();
+                                    propCont.ContactName = contact.Contact;
+                                    propCont.ContactEmail = contact.Email;
+                                    propCont.ContactPhone = contact.Phone;
+                                    propCont.ContactTitle = contact.Title;
+                                    _PCNWContext.Entry(propCont).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                }
+                                _PCNWContext.SaveChanges();
+
+                                AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " SUCCESSFUL PROCESSED FOR CONTACT WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
+
+                                contact.SyncStatus = 3;
+                                _OCOCContext.Entry(contact).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                _OCOCContext.SaveChanges();
+                                AppendMessageToFile(LogFileDirectory, "->> tblContact CONTACT ID " + contact.ConId + " SYNC STATUS UPDATED");
                             }
-                            else if (contact.SyncStatus == 2)
+                            else
                             {
-                                propCont = (from con in _PCNWContext.Contacts where con.BusinessEntityId == lastBusinessEntityId select con).FirstOrDefault();
-                                propCont.ContactName = contact.Contact;
-                                propCont.ContactEmail = contact.Email;
-                                propCont.ContactPhone = contact.Phone;
-                                propCont.ContactTitle = contact.Title;
-                                _PCNWContext.Entry(propCont).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                                AppendMessageToFile(LogFileDirectory, "->> NO CONTACT FOUND FOR MEMBER ID " + member.Id + " IN LIVE DATABASE");
                             }
-                            _PCNWContext.SaveChanges();
-
-                            AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " SUCCESSFUL PROCESSED FOR CONTACT WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
-
-                            contact.SyncStatus = 3;
-                            _OCOCContext.Entry(contact).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                            _OCOCContext.SaveChanges();
-                            AppendMessageToFile(LogFileDirectory, "->> tblContact CONTACT ID " + contact.ConId + " SYNC STATUS UPDATED");
-                        }
-                        else
-                        {
-                            AppendMessageToFile(LogFileDirectory, "->> NO CONTACT FOUND FOR MEMBER ID " + member.Id + " IN LIVE DATABASE");
                         }
                     }
                     catch (Exception ex)

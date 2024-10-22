@@ -1,16 +1,7 @@
-using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using Microsoft.Identity.Client;
 using SyncRoutineWS.OCPCModel;
 using SyncRoutineWS.PCNWModel;
-using System.Diagnostics.Metrics;
-using System.Numerics;
-using System.Reflection.PortableExecutable;
-using System.Runtime.Intrinsics.X86;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace SyncRoutineWS
 {
@@ -36,41 +27,44 @@ namespace SyncRoutineWS
             _OCOCContext = OCPCcont1;
             _PCNWContext = PCNWcont2;
             _scopeFactory = scopeFactory;
-
-            if (configuration != null)
-            {
-                if (!int.TryParse(configuration["minutes"], out elapesedTime))
-                {
-                    elapesedTime = 10;
-                }
-                else
-                {
-                    elapesedTime = Convert.ToInt32(configuration["minutes"]);
-                }
-            }
+            
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            _logger.LogInformation("Worker Service starting.");
+
             if (DoWork != null)
             {
-
                 TimerCallback doWork = DoWork;
-                _timer = new Timer(doWork, null, TimeSpan.Zero, TimeSpan.FromMinutes(elapesedTime));
-                stoppingToken.Register(() => _timer?.Change(Timeout.Infinite, 0));
+
+                // Uncomment the following line to run the service immediately 
+                //_timer = new Timer(doWork, null, TimeSpan.Zero, TimeSpan.FromDays(1));
+
+                // Uncomment the following block to run the service at midnight (for production)                
+                DateTime now = DateTime.Now;
+                DateTime nextMidnight = now.Date.AddDays(1); 
+                TimeSpan timeUntilMidnight = nextMidnight - now;
+                _timer = new Timer(doWork, null, timeUntilMidnight, TimeSpan.FromDays(1));
+                
+
+                // Cancel the timer when the service is stopping
+                _ = stoppingToken.Register(() => _timer?.Change(Timeout.Infinite, 0));
             }
             else
             {
                 _logger.LogWarning("DoWork delegate is not initialized.");
             }
+
             await Task.CompletedTask;
         }
+
 
         private void DoWork(object state)
         {
             AppendMessageToFile(LogFileDirectory, "[ PROCESS " + ++processCount + " ]");
             AppendMessageToFile(LogFileDirectory, "->>> OPERATION STARTED");
-            AppendMessageToFile(LogFileDirectory, "->> SYNC STARTED");
+            AppendMessageToFile(LogFileDirectory, "->>> SYNC STARTED");
 
             try
             {
@@ -80,7 +74,7 @@ namespace SyncRoutineWS
                     _roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
                     // Test1 ->> Test2
-                    AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest STARTED");
+                    AppendMessageToFile(LogFileDirectory, "->>> SYNC FROM OCPCLive - PCNWTest STARTED");
 
                     #region SYNC FROM OCPCLive - PCNWTest
 
@@ -95,10 +89,10 @@ namespace SyncRoutineWS
                     var tblOCPCMember = (from mem in _OCOCContext.TblMembers
                                          join con in _OCOCContext.TblContacts
                                          on mem.Id equals con.Id
-                                         where mem.Id==3621 && (con.SyncStatus == 1 && !businessEntityEmails.Contains(con.Email))
+                                         where (con.SyncStatus == 1 && !businessEntityEmails.Contains(con.Email))
                                          || con.SyncStatus == 2
                                          select mem)
-                                         .Take(1).OrderBy(m=>m.Id)
+                                         .Take(1).OrderBy(m => m.Id)
                                          .AsNoTracking()
                                          .ToList();
 
@@ -127,8 +121,6 @@ namespace SyncRoutineWS
                     //    : new List<TblProjCounty>();
 
                     //ProcessProjectFunctionality(tblProjects, tblProjCounty);
-
-
 
                     // Query Arch Owners
                     //var tblArch = _OCOCContext.TblArchOwners
@@ -162,10 +154,9 @@ namespace SyncRoutineWS
 
                     //ProcessAddendaFunctionality(tblAddenda);
 
-
                     #endregion SYNC FROM OCPCLive - PCNWTest
 
-                    AppendMessageToFile(LogFileDirectory, "->> SYNC FROM OCPCLive - PCNWTest COMPLETED");
+                    AppendMessageToFile(LogFileDirectory, "->>> SYNC FROM OCPCLive - PCNWTest COMPLETED");
                     Console.WriteLine("Sync Completed....");
                 }
             }
@@ -177,7 +168,7 @@ namespace SyncRoutineWS
             }
 
             //Log Entry and Success Message
-            AppendMessageToFile(LogFileDirectory, "->> SYNC COMPLETED");
+            AppendMessageToFile(LogFileDirectory, "->>> SYNC COMPLETED");
             AppendMessageToFile(LogFileDirectory, "->>> OPERATION COMPLETED");
         }
 
@@ -198,21 +189,23 @@ namespace SyncRoutineWS
                             var propProj = (from c in _PCNWContext.Projects where c.SyncProId == adden.ProjId select c).FirstOrDefault();
                             if (propProj != null)
                             {
-                                propAddenda = new Addendum();
-                                propAddenda.AddendaNo = adden.AddendaNo;
-                                propAddenda.MoreInfo = adden.MoreInfo;
-                                propAddenda.ProjId = propProj.SyncProId;
-                                propAddenda.InsertDt = adden.InsertDt;
-                                propAddenda.MvwebPath = adden.MvwebPath;
-                                propAddenda.IssueDt = adden.IssueDt;
-                                propAddenda.PageCnt = adden.PageCnt;
-                                propAddenda.NewBd = adden.NewBd;
-                                //propAddenda.ParentFolder=
-                                //propAddenda.Deleted=
-                                //propAddenda.ParentId =;
-                                propAddenda.SyncStatus = 0;
-                                propAddenda.SyncAddendaId = adden.AddendaId;
-                                _PCNWContext.Addenda.Add(propAddenda);
+                                propAddenda = new()
+                                {
+                                    AddendaNo = adden.AddendaNo,
+                                    MoreInfo = adden.MoreInfo,
+                                    ProjId = propProj.SyncProId,
+                                    InsertDt = adden.InsertDt,
+                                    MvwebPath = adden.MvwebPath,
+                                    IssueDt = adden.IssueDt,
+                                    PageCnt = adden.PageCnt,
+                                    NewBd = adden.NewBd,
+                                    //propAddenda.ParentFolder=
+                                    //propAddenda.Deleted=
+                                    //propAddenda.ParentId =;
+                                    SyncStatus = 0,
+                                    SyncAddendaId = adden.AddendaId
+                                };
+                                _ = _PCNWContext.Addenda.Add(propAddenda);
                             }
                             else
                             {
@@ -222,20 +215,23 @@ namespace SyncRoutineWS
                         else if (adden.SyncStatus == 2)
                         {
                             propAddenda = (from adddenda in _PCNWContext.Addenda where adddenda.SyncAddendaId == adden.AddendaId select adddenda).FirstOrDefault();
-                            propAddenda.AddendaNo = adden.AddendaNo;
-                            propAddenda.MoreInfo = adden.MoreInfo;
-                            propAddenda.InsertDt = adden.InsertDt;
-                            propAddenda.MvwebPath = adden.MvwebPath;
-                            propAddenda.IssueDt = adden.IssueDt;
-                            propAddenda.PageCnt = adden.PageCnt;
-                            propAddenda.NewBd = adden.NewBd;
-                            _PCNWContext.Entry(propAddenda).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                            if (propAddenda!=null)
+                            {
+                                propAddenda.AddendaNo = adden.AddendaNo;
+                                propAddenda.MoreInfo = adden.MoreInfo;
+                                propAddenda.InsertDt = adden.InsertDt;
+                                propAddenda.MvwebPath = adden.MvwebPath;
+                                propAddenda.IssueDt = adden.IssueDt;
+                                propAddenda.PageCnt = adden.PageCnt;
+                                propAddenda.NewBd = adden.NewBd;
+                                _PCNWContext.Entry(propAddenda).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                            }
                         }
-                        _PCNWContext.SaveChanges();
+                        _ = _PCNWContext.SaveChanges();
 
                         adden.SyncStatus = 3;
                         _OCOCContext.Entry(adden).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                        _OCOCContext.SaveChanges();
+                        _ = _OCOCContext.SaveChanges();
 
                         SuccessAddendaProcess++;
                     }
@@ -272,20 +268,22 @@ namespace SyncRoutineWS
                         BusinessEntity propBussEnt;
                         if (con.SyncStatus == 1)
                         {
-                            propBussEnt = new BusinessEntity();
-                            propBussEnt.BusinessEntityName = con.Name;
-                            propBussEnt.BusinessEntityEmail = con.Email;
-                            propBussEnt.BusinessEntityPhone = con.Phone;
-                            propBussEnt.IsMember = false;
-                            propBussEnt.IsContractor = true;
-                            propBussEnt.IsArchitect = false;
-                            propBussEnt.OldMemId = 0;
-                            propBussEnt.OldConId = con.Id;
-                            propBussEnt.OldAoId = 0;
-                            propBussEnt.SyncStatus = 0;
-                            propBussEnt.SyncConId = con.Id;
-                            _PCNWContext.BusinessEntities.Add(propBussEnt);
-                            _PCNWContext.SaveChanges();
+                            propBussEnt = new()
+                            {
+                                BusinessEntityName = con.Name,
+                                BusinessEntityEmail = con.Email,
+                                BusinessEntityPhone = con.Phone,
+                                IsMember = false,
+                                IsContractor = true,
+                                IsArchitect = false,
+                                OldMemId = 0,
+                                OldConId = con.Id,
+                                OldAoId = 0,
+                                SyncStatus = 0,
+                                SyncConId = con.Id
+                            };
+                            _ = _PCNWContext.BusinessEntities.Add(propBussEnt);
+                            _ = _PCNWContext.SaveChanges();
                             lastContractorBusinessEntityId = (from BId in _PCNWContext.BusinessEntities select BId.BusinessEntityId).Max();
                         }
                         else if (con.SyncStatus == 2)
@@ -295,23 +293,25 @@ namespace SyncRoutineWS
                             propBussEnt.BusinessEntityEmail = con.Email;
                             propBussEnt.BusinessEntityPhone = con.Phone;
                             _PCNWContext.Entry(propBussEnt).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                            _PCNWContext.SaveChanges();
+                            _ = _PCNWContext.SaveChanges();
                             lastContractorBusinessEntityId = propBussEnt.BusinessEntityId;
                         }
 
                         Address propAdd;
                         if (con.SyncStatus == 1)
                         {
-                            propAdd = new();
-                            propAdd.BusinessEntityId = lastContractorBusinessEntityId;
-                            propAdd.Addr1 = con.Addr1;
-                            propAdd.City = con.City;
-                            propAdd.State = con.State;
-                            propAdd.Zip = con.Zip;
-                            //propAdd.AddressName = "";
-                            propAdd.SyncStatus = 0;
-                            propAdd.SyncConId = con.Id;
-                            _PCNWContext.Addresses.Add(propAdd);
+                            propAdd = new()
+                            {
+                                BusinessEntityId = lastContractorBusinessEntityId,
+                                Addr1 = con.Addr1,
+                                City = con.City,
+                                State = con.State,
+                                Zip = con.Zip,
+                                //propAdd.AddressName = "";
+                                SyncStatus = 0,
+                                SyncConId = con.Id
+                            };
+                            _ = _PCNWContext.Addresses.Add(propAdd);
                         }
                         else if (con.SyncStatus == 2)
                         {
@@ -322,7 +322,7 @@ namespace SyncRoutineWS
                             propAdd.Zip = con.Zip;
                             _PCNWContext.Entry(propAdd).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                         }
-                        _PCNWContext.SaveChanges();
+                        _ = _PCNWContext.SaveChanges();
 
                         List<TblProjCon> lstPrcON = (from filProjCon in tblProCon where filProjCon.ConId == con.Id select filProjCon).ToList();
                         if (lstPrcON.Count > 0)
@@ -341,18 +341,20 @@ namespace SyncRoutineWS
                                             var propProj = (from c in _PCNWContext.Projects where c.SyncProId == tpc.ProjId select c).FirstOrDefault();
                                             if (propProj != null)
                                             {
-                                                propEnty = new();
-                                                propEnty.EnityName = con.Name;
-                                                //propEnty.EntityType =;
-                                                propEnty.ProjId = propProj.ProjId;
-                                                propEnty.ProjNumber = Convert.ToInt32(propProj.ProjNumber);
-                                                propEnty.IsActive = propProj.IsActive;
-                                                propEnty.NameId = lastContractorBusinessEntityId;
-                                                propEnty.ChkIssue = (bool)tpc.IssuingOffice;
-                                                propEnty.CompType = 2;
-                                                propEnty.SyncStatus = 0;
-                                                propEnty.SyncProjConId = tpc.ProjConId;
-                                                _PCNWContext.Entities.Add(propEnty);
+                                                propEnty = new()
+                                                {
+                                                    EnityName = con.Name,
+                                                    //propEnty.EntityType =;
+                                                    ProjId = propProj.ProjId,
+                                                    ProjNumber = Convert.ToInt32(propProj.ProjNumber),
+                                                    IsActive = propProj.IsActive,
+                                                    NameId = lastContractorBusinessEntityId,
+                                                    ChkIssue = (bool)tpc.IssuingOffice,
+                                                    CompType = 2,
+                                                    SyncStatus = 0,
+                                                    SyncProjConId = tpc.ProjConId
+                                                };
+                                                _ = _PCNWContext.Entities.Add(propEnty);
                                             }
                                             else
                                             {
@@ -361,18 +363,20 @@ namespace SyncRoutineWS
                                         }
                                         else
                                         {
-                                            propEnty = new();
-                                            propEnty.EnityName = con.Name;
-                                            //propEnty.EntityType =;
-                                            propEnty.ProjId = null;
-                                            propEnty.ProjNumber = null;
-                                            propEnty.IsActive = null;
-                                            propEnty.NameId = lastContractorBusinessEntityId;
-                                            propEnty.ChkIssue = (bool)tpc.IssuingOffice;
-                                            propEnty.CompType = 2;
-                                            propEnty.SyncStatus = 0;
-                                            propEnty.SyncProjConId = tpc.ProjConId;
-                                            _PCNWContext.Entities.Add(propEnty);
+                                            propEnty = new()
+                                            {
+                                                EnityName = con.Name,
+                                                //propEnty.EntityType =;
+                                                ProjId = null,
+                                                ProjNumber = null,
+                                                IsActive = null,
+                                                NameId = lastContractorBusinessEntityId,
+                                                ChkIssue = (bool)tpc.IssuingOffice,
+                                                CompType = 2,
+                                                SyncStatus = 0,
+                                                SyncProjConId = tpc.ProjConId
+                                            };
+                                            _ = _PCNWContext.Entities.Add(propEnty);
                                         }
                                     }
                                     else if (tpc.SyncStatus == 2)
@@ -382,12 +386,11 @@ namespace SyncRoutineWS
                                         _PCNWContext.Entry(propEnty).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     }
 
-
-                                    _PCNWContext.SaveChanges();
+                                    _ = _PCNWContext.SaveChanges();
 
                                     tpc.SyncStatus = 3;
                                     _OCOCContext.Entry(tpc).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                                    _OCOCContext.SaveChanges();
+                                    _ = _OCOCContext.SaveChanges();
                                     SuccessPCProcess++;
                                 }
                                 catch (Exception exProjCon)
@@ -407,7 +410,7 @@ namespace SyncRoutineWS
                         }
                         con.SyncStatus = 3;
                         _OCOCContext.Entry(con).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                        _OCOCContext.SaveChanges();
+                        _ = _OCOCContext.SaveChanges();
                         SuccessContractorProcess++;
                     }
                     catch (Exception exContractor)
@@ -443,22 +446,24 @@ namespace SyncRoutineWS
                         BusinessEntity propBussEnt;
                         if (archOw.SyncStatus == 1)
                         {
-                            propBussEnt = new BusinessEntity();
-                            propBussEnt.BusinessEntityName = archOw.Name;
-                            propBussEnt.BusinessEntityEmail = archOw.Email;
-                            propBussEnt.BusinessEntityPhone = archOw.Phone;
-                            propBussEnt.IsMember = false;
-                            propBussEnt.IsContractor = false;
-                            propBussEnt.IsArchitect = true;
-                            propBussEnt.OldMemId = 0;
-                            propBussEnt.OldConId = 0;
-                            propBussEnt.OldAoId = archOw.Id;
-                            propBussEnt.SyncStatus = 0;
-                            propBussEnt.SyncAoid = archOw.Id;
-                            _PCNWContext.BusinessEntities.Add(propBussEnt);
-                            _PCNWContext.SaveChanges();
+                            propBussEnt = new()
+                            {
+                                BusinessEntityName = archOw.Name,
+                                BusinessEntityEmail = archOw.Email,
+                                BusinessEntityPhone = archOw.Phone,
+                                IsMember = false,
+                                IsContractor = false,
+                                IsArchitect = true,
+                                OldMemId = 0,
+                                OldConId = 0,
+                                OldAoId = archOw.Id,
+                                SyncStatus = 0,
+                                SyncAoid = archOw.Id
+                            };
+                            _ = _PCNWContext.BusinessEntities.Add(propBussEnt);
+                            _ = _PCNWContext.SaveChanges();
 
-                            lastAOBusinessEntityId = (from BId in _PCNWContext.BusinessEntities select BId.BusinessEntityId).Max();
+                            lastAOBusinessEntityId = propBussEnt.BusinessEntityId;
                         }
                         else if (archOw.SyncStatus == 2)
                         {
@@ -467,7 +472,7 @@ namespace SyncRoutineWS
                             propBussEnt.BusinessEntityEmail = archOw.Email;
                             propBussEnt.BusinessEntityPhone = archOw.Phone;
                             _PCNWContext.Entry(propBussEnt).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                            _PCNWContext.SaveChanges();
+                            _ = _PCNWContext.SaveChanges();
 
                             lastAOBusinessEntityId = (int)propBussEnt.SyncAoid;
                         }
@@ -475,16 +480,18 @@ namespace SyncRoutineWS
                         Address propAdd;
                         if (archOw.SyncStatus == 1)
                         {
-                            propAdd = new();
-                            propAdd.BusinessEntityId = lastAOBusinessEntityId;
-                            propAdd.Addr1 = archOw.Addr1;
-                            propAdd.City = archOw.City;
-                            propAdd.State = archOw.State;
-                            propAdd.Zip = archOw.Zip;
-                            //propAdd.AddressName = "";
-                            propAdd.SyncStatus = 0;
-                            propAdd.SyncAoid = archOw.Id;
-                            _PCNWContext.Addresses.Add(propAdd);
+                            propAdd = new()
+                            {
+                                BusinessEntityId = lastAOBusinessEntityId,
+                                Addr1 = archOw.Addr1,
+                                City = archOw.City,
+                                State = archOw.State,
+                                Zip = archOw.Zip,
+                                //propAdd.AddressName = "";
+                                SyncStatus = 0,
+                                SyncAoid = archOw.Id
+                            };
+                            _ = _PCNWContext.Addresses.Add(propAdd);
                         }
                         else if (archOw.SyncStatus == 2)
                         {
@@ -495,7 +502,7 @@ namespace SyncRoutineWS
                             propAdd.Zip = archOw.Zip;
                             _PCNWContext.Entry(propAdd).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                         }
-                        _PCNWContext.SaveChanges();
+                        _ = _PCNWContext.SaveChanges();
 
                         List<TblProjAo> lstpao = (from filtAO in tblProArcOwn where filtAO.ArchOwnerId == archOw.Id select filtAO).ToList();
                         if (lstpao.Count > 0)
@@ -514,18 +521,20 @@ namespace SyncRoutineWS
                                             var propProj = (from c in _PCNWContext.Projects where c.SyncProId == ProjAO.ProjId select c).FirstOrDefault();
                                             if (propProj != null)
                                             {
-                                                propEnty = new();
-                                                propEnty.EnityName = archOw.Name;
-                                                //propEnty.EntityType =;
-                                                propEnty.ProjId = propProj.ProjId;
-                                                propEnty.ProjNumber = Convert.ToInt32(propProj.ProjNumber);
-                                                propEnty.IsActive = propProj.IsActive;
-                                                propEnty.NameId = lastAOBusinessEntityId;
-                                                //propEnty.ChkIssue =ProjAO.
-                                                propEnty.CompType = 3;
-                                                propEnty.SyncStatus = 0;
-                                                propEnty.SyncProjAoid = ProjAO.ArchOwnerId;
-                                                _PCNWContext.Entities.Add(propEnty);
+                                                propEnty = new()
+                                                {
+                                                    EnityName = archOw.Name,
+                                                    //propEnty.EntityType =;
+                                                    ProjId = propProj.ProjId,
+                                                    ProjNumber = Convert.ToInt32(propProj.ProjNumber),
+                                                    IsActive = propProj.IsActive,
+                                                    NameId = lastAOBusinessEntityId,
+                                                    //propEnty.ChkIssue =ProjAO.
+                                                    CompType = 3,
+                                                    SyncStatus = 0,
+                                                    SyncProjAoid = ProjAO.ArchOwnerId
+                                                };
+                                                _ = _PCNWContext.Entities.Add(propEnty);
                                             }
                                             else
                                             {
@@ -534,18 +543,20 @@ namespace SyncRoutineWS
                                         }
                                         else
                                         {
-                                            propEnty = new();
-                                            propEnty.EnityName = archOw.Name;
-                                            //propEnty.EntityType =;
-                                            propEnty.ProjId = null;
-                                            propEnty.ProjNumber = null;
-                                            propEnty.IsActive = null;
-                                            propEnty.NameId = lastAOBusinessEntityId;
-                                            //propEnty.ChkIssue =;
-                                            propEnty.CompType = 3;
-                                            propEnty.SyncStatus = 0;
-                                            propEnty.SyncProjAoid = ProjAO.ArchOwnerId;
-                                            _PCNWContext.Entities.Add(propEnty);
+                                            propEnty = new()
+                                            {
+                                                EnityName = archOw.Name,
+                                                //propEnty.EntityType =;
+                                                ProjId = null,
+                                                ProjNumber = null,
+                                                IsActive = null,
+                                                NameId = lastAOBusinessEntityId,
+                                                //propEnty.ChkIssue =;
+                                                CompType = 3,
+                                                SyncStatus = 0,
+                                                SyncProjAoid = ProjAO.ArchOwnerId
+                                            };
+                                            _ = _PCNWContext.Entities.Add(propEnty);
                                         }
                                     }
                                     else if (ProjAO.SyncStatus == 2)
@@ -554,11 +565,11 @@ namespace SyncRoutineWS
                                         propEnty.EnityName = archOw.Name;
                                         _PCNWContext.Entry(propEnty).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                     }
-                                    _PCNWContext.SaveChanges();
+                                    _ = _PCNWContext.SaveChanges();
 
                                     ProjAO.SyncStatus = 3;
                                     _OCOCContext.Entry(ProjAO).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                                    _OCOCContext.SaveChanges();
+                                    _ = _OCOCContext.SaveChanges();
                                 }
                                 catch (Exception exProjAO)
                                 {
@@ -577,7 +588,7 @@ namespace SyncRoutineWS
                         }
                         archOw.SyncStatus = 3;
                         _OCOCContext.Entry(archOw).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                        _OCOCContext.SaveChanges();
+                        _ = _OCOCContext.SaveChanges();
                     }
                     catch (Exception exAO)
                     {
@@ -621,7 +632,7 @@ namespace SyncRoutineWS
                             var record = _OCOCContext.TblProjects.AsNoTracking().FirstOrDefault(m => m.ProjId == proj.ProjId);
                             record.SyncStatus = 3;
                             _OCOCContext.Entry(record).State = EntityState.Modified;
-                            _OCOCContext.SaveChanges();
+                            _ = _OCOCContext.SaveChanges();
                             continue;
                         }
 
@@ -753,8 +764,8 @@ namespace SyncRoutineWS
                                 SyncStatus = 0,
                                 SyncProId = proj.ProjId
                             };
-                            _PCNWContext.Projects.Add(propProject);
-                            _PCNWContext.SaveChanges();
+                            _ = _PCNWContext.Projects.Add(propProject);
+                            _ = _PCNWContext.SaveChanges();
 
                             RecentProjectId = (from pro in _PCNWContext.Projects select pro.ProjId).Max();
                         }
@@ -885,7 +896,7 @@ namespace SyncRoutineWS
                             propProject.Ucpwd2 = proj.Ucpwd2;
                             propProject.UnderCounter = proj.UnderCounter;
                             _PCNWContext.Entry(propProject).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                            _PCNWContext.SaveChanges();
+                            _ = _PCNWContext.SaveChanges();
 
                             RecentProjectId = (int)propProject.SyncProId;
                         }
@@ -914,7 +925,7 @@ namespace SyncRoutineWS
                                         projCounty.CountyId = pc.CountyId;
                                         projCounty.SyncStatus = 0;
                                         projCounty.SyncProCouId = pc.ProjCountyId;
-                                        _PCNWContext.ProjCounties.Add(projCounty);
+                                        _ = _PCNWContext.ProjCounties.Add(projCounty);
                                     }
                                     else
                                     {
@@ -928,11 +939,11 @@ namespace SyncRoutineWS
                                     projCounty.CountyId = pc.CountyId;
                                     _PCNWContext.Entry(projCounty).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
                                 }
-                                _PCNWContext.SaveChanges();
+                                _ = _PCNWContext.SaveChanges();
 
                                 pc.SyncStatus = 3;
                                 _OCOCContext.Entry(pc).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                                _OCOCContext.SaveChanges();
+                                _ = _OCOCContext.SaveChanges();
                                 AppendMessageToFile(LogFileDirectory, "->> tblProjCounty PROJ COUNTY ID " + pc.ProjCountyId + " SYNC STATUS UPDATED");
                             }
                             catch (Exception exProjCounty)
@@ -953,35 +964,39 @@ namespace SyncRoutineWS
                             if (proj.PreBidDt != null)
                             {
                                 var PreBidDt = (DateTime)proj.PreBidDt;
-                                PreBidInfo propPBI = new PreBidInfo();
-                                propPBI.PreBidDate = PreBidDt.Date;
-                                propPBI.PreBidTime = PreBidDt.ToString("HH:mm");
-                                propPBI.Location = proj.PreBidLoc;
-                                propPBI.PreBidAnd = (bool)proj.PrebidAnd;
-                                propPBI.ProjId = RecentProjectId;
-                                propPBI.UndecidedPreBid = false;
-                                propPBI.Pst = "PT";
-                                propPBI.SyncStatus = 0;
-                                _PCNWContext.PreBidInfos.Add(propPBI);
+                                PreBidInfo propPBI = new PreBidInfo
+                                {
+                                    PreBidDate = PreBidDt.Date,
+                                    PreBidTime = PreBidDt.ToString("HH:mm"),
+                                    Location = proj.PreBidLoc,
+                                    PreBidAnd = (bool)proj.PrebidAnd,
+                                    ProjId = RecentProjectId,
+                                    UndecidedPreBid = false,
+                                    Pst = "PT",
+                                    SyncStatus = 0
+                                };
+                                _ = _PCNWContext.PreBidInfos.Add(propPBI);
                             }
 
                             if (proj.PreBidDt2 != null)
                             {
                                 var PreBidDt = (DateTime)proj.PreBidDt2;
-                                PreBidInfo propPBI2 = new PreBidInfo();
-                                propPBI2.PreBidDate = PreBidDt.Date;
-                                propPBI2.PreBidTime = PreBidDt.ToString("HH:mm");
-                                propPBI2.Location = proj.PreBidLoc2;
-                                propPBI2.Pst = "PT";
-                                propPBI2.PreBidAnd = (bool)proj.PrebidAnd;
-                                propPBI2.ProjId = RecentProjectId;
-                                propPBI2.UndecidedPreBid = null;
-                                propPBI2.SyncStatus = 0;
-                                _PCNWContext.PreBidInfos.Add(propPBI2);
+                                PreBidInfo propPBI2 = new PreBidInfo
+                                {
+                                    PreBidDate = PreBidDt.Date,
+                                    PreBidTime = PreBidDt.ToString("HH:mm"),
+                                    Location = proj.PreBidLoc2,
+                                    Pst = "PT",
+                                    PreBidAnd = (bool)proj.PrebidAnd,
+                                    ProjId = RecentProjectId,
+                                    UndecidedPreBid = null,
+                                    SyncStatus = 0
+                                };
+                                _ = _PCNWContext.PreBidInfos.Add(propPBI2);
                             }
                             if (proj.EstCost != null && !string.Equals(proj.EstCost, "N/A", StringComparison.OrdinalIgnoreCase))
                             {
-                                EstCostDetail propECD = new EstCostDetail();
+                                EstCostDetail propECD = new();
                                 if (proj.EstCost.Contains("-"))
                                 {
                                     var costs = proj.EstCost.Split('-');
@@ -997,12 +1012,12 @@ namespace SyncRoutineWS
                                 propECD.Removed = false;
                                 propECD.RangeSign = "=";
                                 propECD.SyncStatus = 0;
-                                _PCNWContext.EstCostDetails.Add(propECD);
+                                _ = _PCNWContext.EstCostDetails.Add(propECD);
                             }
                             if (proj.EstCost2 != null && !string.Equals(proj.EstCost2, "N/A", StringComparison.OrdinalIgnoreCase))
                             {
-                                EstCostDetail propECD2 = new EstCostDetail();
-                                if (proj.EstCost2.Contains("-"))
+                                EstCostDetail propECD2 = new();
+                                if (proj.EstCost2.Contains('-'))
                                 {
                                     var costs = proj.EstCost.Split('-');
                                     propECD2.EstCostTo = costs[0].Trim().Replace("$", "");
@@ -1017,13 +1032,13 @@ namespace SyncRoutineWS
                                 propECD2.Removed = false;
                                 propECD2.RangeSign = "=";
                                 propECD2.SyncStatus = 0;
-                                _PCNWContext.EstCostDetails.Add(propECD2);
+                                _ = _PCNWContext.EstCostDetails.Add(propECD2);
                             }
 
                             if (proj.EstCost3 != null && !string.Equals(proj.EstCost3, "N/A", StringComparison.OrdinalIgnoreCase))
                             {
-                                EstCostDetail propECD3 = new EstCostDetail();
-                                if (proj.EstCost3.Contains("-"))
+                                EstCostDetail propECD3 = new();
+                                if (proj.EstCost3.Contains('-'))
                                 {
                                     var costs = proj.EstCost.Split('-');
                                     propECD3.EstCostTo = costs[0].Trim().Replace("$", "");
@@ -1038,13 +1053,13 @@ namespace SyncRoutineWS
                                 propECD3.Removed = false;
                                 propECD3.RangeSign = "=";
                                 propECD3.SyncStatus = 0;
-                                _PCNWContext.EstCostDetails.Add(propECD3);
+                                _ = _PCNWContext.EstCostDetails.Add(propECD3);
                             }
 
                             if (proj.EstCost4 != null && !string.Equals(proj.EstCost4, "N/A", StringComparison.OrdinalIgnoreCase))
                             {
-                                EstCostDetail propECD4 = new EstCostDetail();
-                                if (proj.EstCost4.Contains("-"))
+                                EstCostDetail propECD4 = new();
+                                if (proj.EstCost4.Contains('-'))
                                 {
                                     var costs = proj.EstCost.Split('-');
                                     propECD4.EstCostTo = costs[0].Trim().Replace("$", "");
@@ -1059,14 +1074,14 @@ namespace SyncRoutineWS
                                 propECD4.Removed = false;
                                 propECD4.RangeSign = "=";
                                 propECD4.SyncStatus = 0;
-                                _PCNWContext.EstCostDetails.Add(propECD4);
+                                _ = _PCNWContext.EstCostDetails.Add(propECD4);
                             }
 
-                            _PCNWContext.SaveChanges();
+                            _ = _PCNWContext.SaveChanges();
                         }
                         proj.SyncStatus = 3;
                         _OCOCContext.Entry(proj).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                        _OCOCContext.SaveChanges();
+                        _ = _OCOCContext.SaveChanges();
                     }
                     catch (Exception exProject)
                     {
@@ -1092,41 +1107,50 @@ namespace SyncRoutineWS
             if (tblOCPCMember != null && tblOCPCMember.Count > 0)
             {
                 int lastBusinessEntityId = 0;
-                foreach (TblMember member in tblOCPCMember)
+                foreach (var member in tblOCPCMember)
                 {
                     try
                     {
                         BusinessEntity propBussEnt;
-                        if (member.SyncStatus == 1)
-                        {                            
-                            propBussEnt = new BusinessEntity
-                            {
-                                BusinessEntityName = member.Company,
-                                BusinessEntityEmail = member.Email,
-                                BusinessEntityPhone = "",
-                                IsMember = true,
-                                IsContractor = false,
-                                IsArchitect = false,
-                                OldMemId = member.Id,
-                                OldConId = 0,
-                                OldAoId = 0,
-                                SyncStatus = 0,
-                                SyncMemId = member.Id
-                            };
-                            _PCNWContext.BusinessEntities.Add(propBussEnt);
-                            _PCNWContext.SaveChanges();
-
-                            lastBusinessEntityId = (from BId in _PCNWContext.BusinessEntities select BId.BusinessEntityId).Max();
-                        }
-                        else if (member.SyncStatus == 2)
+                        switch (member.SyncStatus)
                         {
-                            propBussEnt = (from be in _PCNWContext.BusinessEntities where be.BusinessEntityName == member.Company select be).FirstOrDefault();
-                            propBussEnt.BusinessEntityName = member.Company;
-                            propBussEnt.BusinessEntityEmail = member.Email;
-                            _PCNWContext.Entry(propBussEnt).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                            _PCNWContext.SaveChanges();
+                            case 1:
+                                {
+                                    propBussEnt = new BusinessEntity
+                                    {
+                                        BusinessEntityName = member.Company,
+                                        BusinessEntityEmail = member.Email,
+                                        BusinessEntityPhone = "",
+                                        IsMember = true,
+                                        IsContractor = false,
+                                        IsArchitect = false,
+                                        OldMemId = member.Id,
+                                        OldConId = 0,
+                                        OldAoId = 0,
+                                        SyncStatus = 0,
+                                        SyncMemId = member.Id
+                                    };
+                                    _ = _PCNWContext.BusinessEntities.Add(propBussEnt);
+                                    _ = _PCNWContext.SaveChanges();
 
-                            lastBusinessEntityId = propBussEnt.BusinessEntityId;
+                                    lastBusinessEntityId = (from BId in _PCNWContext.BusinessEntities select BId.BusinessEntityId).Max();
+                                    break;
+                                }
+
+                            case 2:
+                                {
+                                    propBussEnt = (from be in _PCNWContext.BusinessEntities where be.BusinessEntityName == member.Company select be).FirstOrDefault();
+                                    propBussEnt.BusinessEntityName = member.Company;
+                                    propBussEnt.BusinessEntityEmail = member.Email;
+                                    _PCNWContext.Entry(propBussEnt).State = EntityState.Modified;
+                                    _ = _PCNWContext.SaveChanges();
+
+                                    lastBusinessEntityId = propBussEnt.BusinessEntityId;
+                                    break;
+                                }
+
+                            default:
+                                break;
                         }
 
                         AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " PROCESSING WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
@@ -1135,82 +1159,88 @@ namespace SyncRoutineWS
                         SyncOCPC_MemberToPCNW_Member_Address(lastBusinessEntityId, member);
 
                         member.SyncStatus = 3;
-                        _OCOCContext.Entry(member).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                        _OCOCContext.SaveChanges();
+                         _OCOCContext.Entry(member).State = EntityState.Modified;
+                        _ = _OCOCContext.SaveChanges();
                         AppendMessageToFile(LogFileDirectory, "->> tblMember MEMBER ID " + member.Id + " SYNC STATUS UPDATED");
-
-                        var contacts = (from c in tblOCPCContact where c.Id == member.Id && (c.SyncStatus == 1 || c.SyncStatus == 2) select c).ToList();
+                        var contacts = tblOCPCContact.Where(m =>
+                        {
+                            return m.Id == member.Id && (m.SyncStatus == 1 || m.SyncStatus == 2);
+                        });
                         foreach (var contact in contacts)
                         {
                             if (contact != null)
                             {
                                 Contact propCont;
 
-                                if (contact.SyncStatus == 1)
+                                switch (contact.SyncStatus)
                                 {
-                                    var userid = new Guid();
-                                    bool mainContactExists = true ;
-                                    if (!string.IsNullOrEmpty(contact.Email) && !string.IsNullOrEmpty(contact.Email))
-                                    {
-                                        var user = new IdentityUser
+                                    case 1:
                                         {
-                                            Email = contact.Email,
-                                            UserName = contact.Email
-                                        };
-                                        var pass = tblOCPCContact.FirstOrDefault(c => c.Id == member.Id).Password;
+                                            Guid userid = new();
+                                            bool mainContactExists = true;
+                                            if (!string.IsNullOrEmpty(contact.Email) && !string.IsNullOrEmpty(contact.Password))
+                                            {
+                                                var user = new IdentityUser
+                                                {
+                                                    Email = contact.Email,
+                                                    UserName = contact.Email
+                                                };
 
-                                        var result = _userManager.CreateAsync(user, pass).GetAwaiter().GetResult();
-                                        if (!result.Succeeded)
-                                        {
-                                            throw new Exception(result.Errors.ToString());
+                                                var result = _userManager.CreateAsync(user, contact.Password).GetAwaiter().GetResult();
+                                                if (!result.Succeeded)
+                                                {
+                                                    throw new Exception(message: result.Errors.ToString());
+                                                }
+
+                                                var addrole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
+                                                if (!addrole.Succeeded)
+                                                {
+                                                    throw new Exception(addrole.Errors.ToString());
+                                                }
+                                                if (!Guid.TryParse(user.Id, out userid))
+                                                {
+                                                    throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
+                                                }
+
+                                                mainContactExists = _PCNWContext.Contacts.Any(c => c.BusinessEntityId == lastBusinessEntityId && c.MainContact == true);
+                                            }
+                                            propCont = new Contact
+                                            {
+                                                UserId = userid,
+                                                CompType = 1,
+                                                MainContact = !mainContactExists,
+                                                Active = !member.Inactive,
+                                                ContactName = contact.Contact,
+                                                ContactEmail = contact.Email,
+                                                Password = contact.Password,
+                                                BusinessEntityId = lastBusinessEntityId,
+                                                ContactPhone = contact.Phone,
+                                                ContactTitle = contact.Title,
+                                                SyncStatus = 0,
+                                                SyncConId = contact.ConId
+                                            };
+                                            _ = _PCNWContext.Contacts.Add(propCont);
+                                            break;
                                         }
 
-                                        var addrole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
-                                        if (!addrole.Succeeded)
+                                    case 2:
                                         {
-                                            throw new Exception(addrole.Errors.ToString());
+                                            propCont = (from con in _PCNWContext.Contacts where con.BusinessEntityId == lastBusinessEntityId select con).FirstOrDefault();
+                                            propCont.ContactName = contact.Contact;
+                                            propCont.ContactEmail = contact.Email;
+                                            propCont.ContactPhone = contact.Phone;
+                                            propCont.ContactTitle = contact.Title;
+                                            _PCNWContext.Entry(propCont).State = EntityState.Modified;
+                                            break;
                                         }
-                                        if (!Guid.TryParse(user.Id, out userid)) // Try to parse the string to Guid
-                                        {
-                                            throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
-                                        }
-
-                                        mainContactExists = _PCNWContext.Contacts.Any(c => c.BusinessEntityId == lastBusinessEntityId && c.MainContact == true);
-                                    }
-                                    propCont = new Contact
-                                    {
-                                        UserId = userid,
-                                        CompType = 1,
-                                        MainContact = !mainContactExists,
-                                        Active = !member.Inactive,
-                                        ContactName = contact.Contact,
-                                        ContactEmail = contact.Email,
-                                        Password = contact.Password,
-                                        BusinessEntityId = lastBusinessEntityId,
-                                        ContactPhone = contact.Phone,
-                                        ContactTitle = contact.Title,
-                                        SyncStatus = 0,
-                                        SyncConId = contact.ConId
-
-                                    };
-                                    _PCNWContext.Contacts.Add(propCont);
                                 }
-                                else if (contact.SyncStatus == 2)
-                                {
-                                    propCont = (from con in _PCNWContext.Contacts where con.BusinessEntityId == lastBusinessEntityId select con).FirstOrDefault();
-                                    propCont.ContactName = contact.Contact;
-                                    propCont.ContactEmail = contact.Email;
-                                    propCont.ContactPhone = contact.Phone;
-                                    propCont.ContactTitle = contact.Title;
-                                    _PCNWContext.Entry(propCont).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                                }
-                                _PCNWContext.SaveChanges();
+                                _ = _PCNWContext.SaveChanges();
 
-                                AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " SUCCESSFUL PROCESSED FOR CONTACT WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
+                                AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " SUCCESSFUL PROCESSED FOR CONTACT ID " + contact.ConId + " WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
 
                                 contact.SyncStatus = 3;
-                                _OCOCContext.Entry(contact).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
-                                _OCOCContext.SaveChanges();
+                                _OCOCContext.Entry(contact).State = EntityState.Modified;
+                                _ = _OCOCContext.SaveChanges();
                                 AppendMessageToFile(LogFileDirectory, "->> tblContact CONTACT ID " + contact.ConId + " SYNC STATUS UPDATED");
                             }
                             else
@@ -1243,74 +1273,76 @@ namespace SyncRoutineWS
             Member propMem;
             if (member.SyncStatus == 1)
             {
-                propMem = new Member();
-                propMem.Inactive = member.Inactive;
-                propMem.InsertDate = (DateTime)member.InsertDate;
-                propMem.LastPayDate = member.LastPayDate;
-                propMem.RenewalDate = member.RenewalDate;
-                propMem.Term = member.Term;
-                propMem.Div = member.Div;
-                propMem.Discipline = member.Discipline;
-                propMem.Note = member.Note;
-                propMem.MinorityStatus = member.MinorityStatus;
-                propMem.MemberType = member.MemberType;
-                propMem.AcceptedTerms = member.AcceptedTerms;
-                propMem.AcceptedTermsDt = member.AcceptedTermsDt;
-                propMem.DailyEmail = member.DailyEmail;
-                propMem.Html = member.Html;
-                propMem.Overdue = member.Overdue;
-                propMem.Cod = member.Cod;
-                propMem.PaperlessBilling = member.PaperlessBilling;
-                propMem.MemberCost = member.MemberCost;
-                propMem.MagCost = member.MagCost;
-                propMem.ArchPkgCost = member.ArchPkgCost;
-                propMem.AddPkgCost = member.AddPkgCost;
-                propMem.ResourceDate = member.ResourceDate;
-                propMem.ResourceCost = member.ResourceCost;
-                propMem.WebAdDate = member.WebAdDate;
-                propMem.WebAdCost = member.WebAdCost;
-                propMem.Phl = member.Phl;
-                propMem.Email = member.Email;
-                propMem.NameField = member.NameField;
-                propMem.FavExp = member.FavExp;
-                propMem.Grace = member.Grace;
-                propMem.ConId = member.ConId;
-                propMem.Gcservices = member.Gcservices;
-                propMem.ResourceStandard = member.ResourceStandard;
-                propMem.ResourceColor = member.ResourceColor;
-                propMem.ResourceLogo = member.ResourceLogo;
-                propMem.ResourceAdd = member.ResourceAdd;
-                propMem.Dba = member.Dba;
-                propMem.Dba2 = member.Dba2;
-                propMem.Fka = member.Fka;
-                propMem.Suspended = member.Suspended;
-                propMem.SuspendedDt = member.SuspendedDt;
-                propMem.Fax = member.Fax;
-                propMem.MailAddress = member.MailAddress;
-                propMem.MailCity = member.MailCity;
-                propMem.MailState = member.MailState;
-                propMem.MailZip = member.MailZip;
-                propMem.OverdueAmt = member.OverdueAmt;
-                propMem.OverdueDt = member.OverdueDt;
-                propMem.CalSort = member.CalSort;
-                propMem.Pdfpkg = member.Pdfpkg;
-                propMem.ArchPkg = member.ArchPkg;
-                propMem.AddPkg = member.AddPkg;
-                propMem.Bend = member.Bend;
-                propMem.Credits = member.Credits;
-                propMem.FreelanceEstimator = member.FreelanceEstimator;
-                propMem.HowdUhearAboutUs = member.HowdUhearAboutUs;
-                propMem.TmStamp = member.TmStamp;
-                propMem.BusinessEntityId = lastBusinessEntityId;
-                propMem.SyncStatus = 0;
-                propMem.SyncMemId = member.Id;
-                _PCNWContext.Members.Add(propMem);
+                propMem = new Member
+                {
+                    Inactive = member.Inactive,
+                    InsertDate = (DateTime)member.InsertDate!,
+                    LastPayDate = member.LastPayDate,
+                    RenewalDate = member.RenewalDate,
+                    Term = member.Term,
+                    Div = member.Div,
+                    Discipline = member.Discipline,
+                    Note = member.Note,
+                    MinorityStatus = member.MinorityStatus,
+                    MemberType = member.MemberType,
+                    AcceptedTerms = member.AcceptedTerms,
+                    AcceptedTermsDt = member.AcceptedTermsDt,
+                    DailyEmail = member.DailyEmail,
+                    Html = member.Html,
+                    Overdue = member.Overdue,
+                    Cod = member.Cod,
+                    PaperlessBilling = member.PaperlessBilling,
+                    MemberCost = member.MemberCost,
+                    MagCost = member.MagCost,
+                    ArchPkgCost = member.ArchPkgCost,
+                    AddPkgCost = member.AddPkgCost,
+                    ResourceDate = member.ResourceDate,
+                    ResourceCost = member.ResourceCost,
+                    WebAdDate = member.WebAdDate,
+                    WebAdCost = member.WebAdCost,
+                    Phl = member.Phl,
+                    Email = member.Email,
+                    NameField = member.NameField,
+                    FavExp = member.FavExp,
+                    Grace = member.Grace,
+                    ConId = member.ConId,
+                    Gcservices = member.Gcservices,
+                    ResourceStandard = member.ResourceStandard,
+                    ResourceColor = member.ResourceColor,
+                    ResourceLogo = member.ResourceLogo,
+                    ResourceAdd = member.ResourceAdd,
+                    Dba = member.Dba,
+                    Dba2 = member.Dba2,
+                    Fka = member.Fka,
+                    Suspended = member.Suspended,
+                    SuspendedDt = member.SuspendedDt,
+                    Fax = member.Fax,
+                    MailAddress = member.MailAddress,
+                    MailCity = member.MailCity,
+                    MailState = member.MailState,
+                    MailZip = member.MailZip,
+                    OverdueAmt = member.OverdueAmt,
+                    OverdueDt = member.OverdueDt,
+                    CalSort = member.CalSort,
+                    Pdfpkg = member.Pdfpkg,
+                    ArchPkg = member.ArchPkg,
+                    AddPkg = member.AddPkg,
+                    Bend = member.Bend,
+                    Credits = member.Credits,
+                    FreelanceEstimator = member.FreelanceEstimator,
+                    HowdUhearAboutUs = member.HowdUhearAboutUs,
+                    TmStamp = member.TmStamp,
+                    BusinessEntityId = lastBusinessEntityId,
+                    SyncStatus = 0,
+                    SyncMemId = member.Id
+                };
+                _ = _PCNWContext.Members.Add(propMem);
             }
             else if (member.SyncStatus == 2)
             {
-                propMem = (from mem in _PCNWContext.Members where mem.BusinessEntityId == lastBusinessEntityId select mem).FirstOrDefault();
+                propMem = (from mem in _PCNWContext.Members where mem.BusinessEntityId == lastBusinessEntityId select mem).FirstOrDefault()!;
                 propMem.Inactive = member.Inactive;
-                propMem.InsertDate = (DateTime)member.InsertDate;
+                propMem.InsertDate = (DateTime)member.InsertDate!;
                 propMem.LastPayDate = member.LastPayDate;
                 propMem.RenewalDate = member.RenewalDate;
                 propMem.Term = member.Term;
@@ -1380,7 +1412,7 @@ namespace SyncRoutineWS
                 propAdd.Zip = member.BillZip;
                 propAdd.SyncStatus = 0;
                 propAdd.SyncMemId = member.Id;
-                _PCNWContext.Addresses.Add(propAdd);
+                _ = _PCNWContext.Addresses.Add(propAdd);
             }
             else if (member.SyncStatus == 2)
             {
@@ -1391,14 +1423,15 @@ namespace SyncRoutineWS
                 propAdd.Zip = member.BillZip;
                 _PCNWContext.Entry(propAdd).State = Microsoft.EntityFrameworkCore.EntityState.Modified;
             }
-            _PCNWContext.SaveChanges();
+            _ = _PCNWContext.SaveChanges();
             AppendMessageToFile(LogFileDirectory, "->> MEMBER ID " + member.Id + " SUCCESSFUL PROCESSED FOR MEMBER AND ADDRESS WITH BUSINESS ENTITY ID: " + lastBusinessEntityId);
         }
 
-        public override async Task StopAsync(CancellationToken stoppingToken)
+        public override Task StopAsync(CancellationToken cancellationToken)
         {
+            _logger.LogInformation("Worker Service is stopping.");
             _timer?.Change(Timeout.Infinite, 0);
-            await base.StopAsync(stoppingToken);
+            return base.StopAsync(cancellationToken);
         }
 
         private static void AppendMessageToFile(string LogFileDirectory, string message)
@@ -1409,7 +1442,7 @@ namespace SyncRoutineWS
                 // Ensure directory exists
                 if (!Directory.Exists(LogFileDirectory))
                 {
-                    Directory.CreateDirectory(LogFileDirectory);
+                    _ = Directory.CreateDirectory(LogFileDirectory);
                 }
 
                 // Append message to file, create file if it doesn't exist
@@ -1428,13 +1461,9 @@ namespace SyncRoutineWS
             }
             catch (Exception ex)
             {
-                using (FileStream fs = new FileStream(LogFileFullPath, FileMode.Append, FileAccess.Write))
-                {
-                    using (StreamWriter writer = new StreamWriter(fs))
-                    {
-                        writer.WriteLine("\nEXCEPTION OCCURED - " + ex.Message + " [" + DateTime.Now + "]");
-                    }
-                }
+                using FileStream fs = new(LogFileFullPath, FileMode.Append, FileAccess.Write);
+                using StreamWriter writer = new(fs);
+                writer.WriteLine("\nEXCEPTION OCCURED - " + ex.Message + " [" + DateTime.Now + "]");
                 //_logger.LogError(ex, "An error occurred while writing to the file.");
             }
         }

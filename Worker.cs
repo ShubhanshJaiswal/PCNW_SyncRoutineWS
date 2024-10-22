@@ -14,7 +14,7 @@ namespace SyncRoutineWS
         private Timer? _timer;
         private int elapesedTime;
         private readonly IConfiguration _configuration;
-        private string LogFileDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+        private string LogFileDirectory = @"G:\MyLogs\SyncRoutineLogs";
         private readonly ILogger<Worker> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private UserManager<IdentityUser> _userManager;
@@ -32,8 +32,8 @@ namespace SyncRoutineWS
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Worker Service starting.");
 
+            AppendMessageToFile(LogFileDirectory, "->>> OPERATION STARTED");
             if (DoWork != null)
             {
                 TimerCallback doWork = DoWork;
@@ -63,7 +63,6 @@ namespace SyncRoutineWS
         private void DoWork(object state)
         {
             AppendMessageToFile(LogFileDirectory, "[ PROCESS " + ++processCount + " ]");
-            AppendMessageToFile(LogFileDirectory, "->>> OPERATION STARTED");
             AppendMessageToFile(LogFileDirectory, "->>> SYNC STARTED");
 
             try

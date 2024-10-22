@@ -104,54 +104,54 @@ namespace SyncRoutineWS
                     tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
                     ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
-                    //project sync code
+                   // project sync code
 
-                    //var tblProjects = _OCOCContext.TblProjects
-                    //    .Where(proj => proj.SyncStatus == 1 || proj.SyncStatus == 2).Take(1)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                    var tblProjects = _OCOCContext.TblProjects
+                        .Where(proj => proj.SyncStatus == 1 || proj.SyncStatus == 2).Take(1)
+                        .AsNoTracking()
+                        .ToList();
 
-                    //var tblProjCounty = tblProjects.Any()
-                    //    ? _OCOCContext.TblProjCounties
-                    //        .Where(projCounty => projCounty.ProjId == tblProjects[0].ProjId &&
-                    //                             (projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2))
-                    //        .AsNoTracking()
-                    //        .ToList()
-                    //    : new List<TblProjCounty>();
+                    var tblProjCounty = tblProjects.Any()
+                        ? _OCOCContext.TblProjCounties
+                            .Where(projCounty => projCounty.ProjId == tblProjects[0].ProjId &&
+                                                 (projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2))
+                            .AsNoTracking()
+                            .ToList()
+                        : new List<TblProjCounty>();
 
-                    //ProcessProjectFunctionality(tblProjects, tblProjCounty);
+                    ProcessProjectFunctionality(tblProjects, tblProjCounty);
 
-                    // Query Arch Owners
-                    //var tblArch = _OCOCContext.TblArchOwners
-                    //    .Where(arch => emailCheck(arch.Email, arch.SyncStatus) || arch.SyncStatus == 2)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                   // Query Arch Owners
+                   var tblArch = _OCOCContext.TblArchOwners
+                       .Where(arch => emailCheck(arch.Email, arch.SyncStatus) || arch.SyncStatus == 2)
+                       .AsNoTracking()
+                       .ToList();
 
-                    //var tblProArc = _OCOCContext.TblProjAos
-                    //    .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                    var tblProArc = _OCOCContext.TblProjAos
+                        .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
+                        .AsNoTracking()
+                        .ToList();
 
-                    //ProcessArchOwnerFunctionality(tblArch, tblProArc);
+                    ProcessArchOwnerFunctionality(tblArch, tblProArc);
 
-                    //var tblCont = _OCOCContext.TblContractors
-                    //    .Where(cont => emailCheck(cont.Email, cont.SyncStatus) || cont.SyncStatus == 2)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                    var tblCont = _OCOCContext.TblContractors
+                        .Where(cont => emailCheck(cont.Email, cont.SyncStatus) || cont.SyncStatus == 2)
+                        .AsNoTracking()
+                        .ToList();
 
-                    //var tblProCon = _OCOCContext.TblProjCons
-                    //    .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                    var tblProCon = _OCOCContext.TblProjCons
+                        .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
+                        .AsNoTracking()
+                        .ToList();
 
-                    //ProcessContractorFunctionality(tblCont, tblProCon);
+                    ProcessContractorFunctionality(tblCont, tblProCon);
 
-                    //var tblAddenda = _OCOCContext.TblAddenda
-                    //    .Where(adden => adden.SyncStatus == 1 || adden.SyncStatus == 2)
-                    //    .AsNoTracking()
-                    //    .ToList();
+                    var tblAddenda = _OCOCContext.TblAddenda
+                        .Where(adden => adden.SyncStatus == 1 || adden.SyncStatus == 2)
+                        .AsNoTracking()
+                        .ToList();
 
-                    //ProcessAddendaFunctionality(tblAddenda);
+                    ProcessAddendaFunctionality(tblAddenda);
 
                     #endregion SYNC FROM OCPCLive - PCNWTest
 

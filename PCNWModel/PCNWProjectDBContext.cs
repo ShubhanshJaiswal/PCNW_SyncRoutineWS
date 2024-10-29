@@ -387,7 +387,6 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 
             entity.ToTable("Project", tb =>
             {
-                tb.HasTrigger("tr_Project_U");
                 tb.HasTrigger("trg_generate_projnumber");
             });
 

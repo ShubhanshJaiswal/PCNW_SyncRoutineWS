@@ -6,6 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Identity;
+using Serilog;
+using Serilog.Events;
+using Serilog.Filters;
 
 namespace SyncRoutineWS
 {
@@ -18,12 +21,23 @@ namespace SyncRoutineWS
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
-             .ConfigureAppConfiguration((hostingContext, config) =>
-             {
-                 config.SetBasePath(AppContext.BaseDirectory)
-                 .AddJsonFile($"appsettings.json", optional: true, reloadOnChange: true);
-             })
-                .ConfigureServices((hostContext, services) =>
+			.UseSerilog((context, services, configuration) => configuration
+				.MinimumLevel.Information()
+				.MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+				.WriteTo.Console()
+				.WriteTo.File("G:\\MyLogs\\SyncRoutineLogs\\log.txt", rollingInterval: RollingInterval.Day)
+				.Filter.ByExcluding(Matching.FromSource("Microsoft.EntityFrameworkCore"))
+			)
+
+			 .ConfigureAppConfiguration((context, config) =>
+			 {
+				 var env = context.HostingEnvironment;
+
+				 config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+					   .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: true)
+					   .AddEnvironmentVariables();
+			 })
+				.ConfigureServices((hostContext, services) =>
                 {
                     services.AddHostedService<Worker>();
                     services.AddDbContext<OCPCProjectDBContext>(options =>

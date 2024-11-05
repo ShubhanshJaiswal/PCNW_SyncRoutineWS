@@ -8,6 +8,10 @@ namespace SyncRoutineWS.OCPCModel;
 
 public partial class OCPCProjectDBContext : DbContext
 {
+    public OCPCProjectDBContext()
+    {
+    }
+
     public OCPCProjectDBContext(DbContextOptions<OCPCProjectDBContext> options)
         : base(options)
     {
@@ -35,6 +39,7 @@ public partial class OCPCProjectDBContext : DbContext
 
     public virtual DbSet<TblProject> TblProjects { get; set; }
 
+  
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<TblAddendum>(entity =>
@@ -42,10 +47,11 @@ public partial class OCPCProjectDBContext : DbContext
             entity.HasKey(e => e.AddendaId);
 
             entity.ToTable("tblAddenda", tb =>
-                {
-                    tb.HasTrigger("tr_Addenda_D");
-                    tb.HasTrigger("tr_Addenda_IU");
-                });
+            {
+                tb.HasTrigger("tr_Addenda_D");
+                tb.HasTrigger("tr_Addenda_IU");
+                tb.HasTrigger("trgAfterUpdateOntblAddenda");
+            });
 
             entity.HasIndex(e => e.ProjId, "FHProjId").IsDescending();
 
@@ -53,15 +59,15 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.AddendaNo).HasMaxLength(50);
             entity.Property(e => e.InsertDt).HasColumnType("smalldatetime");
             entity.Property(e => e.IssueDt).HasColumnType("smalldatetime");
-            entity.Property(e => e.MoreInfo).HasDefaultValueSql("(0)");
+            entity.Property(e => e.MoreInfo).HasDefaultValue(false);
             entity.Property(e => e.MvwebPath)
                 .HasMaxLength(200)
                 .HasColumnName("MVWebPath");
             entity.Property(e => e.NewBd)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("NewBD");
             entity.Property(e => e.PageCnt).HasMaxLength(10);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
 
             entity.HasOne(d => d.Proj).WithMany(p => p.TblAddenda)
                 .HasForeignKey(d => d.ProjId)
@@ -71,7 +77,7 @@ public partial class OCPCProjectDBContext : DbContext
 
         modelBuilder.Entity<TblArchOwner>(entity =>
         {
-            entity.ToTable("tblArchOwner");
+            entity.ToTable("tblArchOwner", tb => tb.HasTrigger("trgAfterUpdateOntblArchOwner"));
 
             entity.Property(e => e.Id).HasColumnName("ID");
             entity.Property(e => e.Addr1).HasMaxLength(50);
@@ -90,7 +96,7 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(10)
                 .HasColumnName("PWD");
             entity.Property(e => e.State).HasMaxLength(50);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.Type1).HasMaxLength(50);
             entity.Property(e => e.Uid)
                 .HasMaxLength(10)
@@ -103,12 +109,12 @@ public partial class OCPCProjectDBContext : DbContext
         {
             entity.HasKey(e => e.CityCountyId);
 
-            entity.ToTable("tblCityCounty");
+            entity.ToTable("tblCityCounty", tb => tb.HasTrigger("trgAfterUpdateOntblCityCounty"));
 
             entity.Property(e => e.CityCountyId).HasColumnName("CityCountyID");
             entity.Property(e => e.City).HasMaxLength(50);
             entity.Property(e => e.CountyId).HasColumnName("CountyID");
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
         });
 
         modelBuilder.Entity<TblContact>(entity =>
@@ -116,27 +122,34 @@ public partial class OCPCProjectDBContext : DbContext
             entity.HasKey(e => e.ConId);
 
             entity.ToTable("tblContact", tb =>
-                {
-                    tb.HasTrigger("tr_Contact_D");
-                    tb.HasTrigger("tr_Contact_IU");
-                });
+            {
+                tb.HasTrigger("tr_Contact_D");
+                tb.HasTrigger("tr_Contact_IU");
+                tb.HasTrigger("trgAfterUpdateOntblContact");
+            });
 
             entity.HasIndex(e => new { e.ConId, e.Id }, "_dta_index_tblContact_8_943342425__K1_K2_8_9");
 
             entity.Property(e => e.ConId).HasColumnName("ConID");
             entity.Property(e => e.Contact).HasMaxLength(50);
             entity.Property(e => e.Daily)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasComment("Send Daily Email?");
             entity.Property(e => e.Email).HasMaxLength(50);
+            entity.Property(e => e.FirstName)
+                .HasMaxLength(50)
+                .HasDefaultValue("");
             entity.Property(e => e.Id).HasColumnName("ID");
+            entity.Property(e => e.LastName)
+                .HasMaxLength(50)
+                .HasDefaultValue("");
             entity.Property(e => e.MainContact)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasComment("If there are multiple contacts, which is the main contact?");
             entity.Property(e => e.MessageDt).HasColumnType("datetime");
             entity.Property(e => e.Password).HasMaxLength(128);
             entity.Property(e => e.Phone).HasMaxLength(50);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.Title)
                 .HasMaxLength(50)
                 .HasComment("Owner, Estimator");
@@ -151,7 +164,7 @@ public partial class OCPCProjectDBContext : DbContext
 
         modelBuilder.Entity<TblContractor>(entity =>
         {
-            entity.ToTable("tblContractor");
+            entity.ToTable("tblContractor", tb => tb.HasTrigger("trgAfterUpdateOntblContractor"));
 
             entity.Property(e => e.Id).HasColumnName("ID");
             entity.Property(e => e.Addr1).HasMaxLength(255);
@@ -166,7 +179,7 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.GcserviceTimeStamp)
                 .HasColumnType("datetime")
                 .HasColumnName("GCServiceTimeStamp");
-            entity.Property(e => e.Hosting).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Hosting).HasDefaultValue(false);
             entity.Property(e => e.HostingPwd)
                 .HasMaxLength(50)
                 .HasColumnName("HostingPWD");
@@ -176,7 +189,7 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(20)
                 .HasColumnName("PWD");
             entity.Property(e => e.State).HasMaxLength(50);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.Uid)
                 .HasMaxLength(20)
                 .HasColumnName("UID");
@@ -193,7 +206,6 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.CountyId).HasColumnName("CountyID");
             entity.Property(e => e.County).HasMaxLength(50);
             entity.Property(e => e.State).HasMaxLength(2);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
         });
 
         modelBuilder.Entity<TblMember>(entity =>
@@ -202,7 +214,11 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasName("aaaaatblMember_PK")
                 .IsClustered(false);
 
-            entity.ToTable("tblMember", tb => tb.HasTrigger("tr_Member_IU"));
+            entity.ToTable("tblMember", tb =>
+            {
+                tb.HasTrigger("tr_Member_IU");
+                tb.HasTrigger("trgAfterUpdateOntblMember");
+            });
 
             entity.HasIndex(e => e.Id, "ID");
 
@@ -215,7 +231,7 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.AddPkgCost)
                 .HasColumnType("money")
                 .HasColumnName("AddPkg_Cost");
-            entity.Property(e => e.ArchPkg).HasDefaultValueSql("((0))");
+            entity.Property(e => e.ArchPkg).HasDefaultValue(false);
             entity.Property(e => e.ArchPkgCost)
                 .HasColumnType("money")
                 .HasColumnName("ArchPkg_Cost");
@@ -225,7 +241,7 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.BillZip).HasMaxLength(50);
             entity.Property(e => e.CalSort).HasMaxLength(50);
             entity.Property(e => e.Cod)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("COD");
             entity.Property(e => e.Company).HasMaxLength(50);
             entity.Property(e => e.ConId).HasColumnName("Con_ID");
@@ -241,7 +257,7 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasColumnName("DBA2");
             entity.Property(e => e.Discipline)
                 .HasMaxLength(255)
-                .HasDefaultValueSql("('')");
+                .HasDefaultValue("");
             entity.Property(e => e.Div).HasMaxLength(50);
             entity.Property(e => e.Email).HasMaxLength(50);
             entity.Property(e => e.FavExp).HasColumnType("datetime");
@@ -250,13 +266,13 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("FKA");
             entity.Property(e => e.Gcservices).HasColumnName("GCservices");
-            entity.Property(e => e.Grace).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Grace).HasDefaultValue(0);
             entity.Property(e => e.HowdUhearAboutUs)
                 .HasMaxLength(255)
-                .HasDefaultValueSql("('')")
+                .HasDefaultValue("")
                 .HasColumnName("HowdUHearAboutUs");
             entity.Property(e => e.Html)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("HTML");
             entity.Property(e => e.InsertDate)
                 .HasColumnType("datetime")
@@ -273,11 +289,11 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasColumnType("money")
                 .HasColumnName("Member_Cost");
             entity.Property(e => e.MemberType)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(0)
                 .HasComment("0 = Regular, 1 = Full, 2 = Partial");
             entity.Property(e => e.MinorityStatus).HasMaxLength(50);
             entity.Property(e => e.NameField)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(0m)
                 .HasComment("Favorites/IEN # control")
                 .HasColumnType("decimal(18, 0)");
             entity.Property(e => e.Note).HasColumnType("ntext");
@@ -286,6 +302,9 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.PaperlessBilling)
                 .HasMaxLength(50)
                 .HasColumnName("Paperless_billing");
+            //entity.Property(e => e.PaymentTerm)
+            //    .HasMaxLength(2)
+            //    .HasDefaultValue("12");
             entity.Property(e => e.Pdfpkg).HasColumnName("PDFPkg");
             entity.Property(e => e.Phl).HasColumnName("PHL");
             entity.Property(e => e.RenewalDate).HasColumnType("datetime");
@@ -309,7 +328,7 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("Resource_Standard");
             entity.Property(e => e.SuspendedDt).HasMaxLength(50);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.Term).HasMaxLength(50);
             entity.Property(e => e.TmStamp)
                 .IsRowVersion()
@@ -327,7 +346,7 @@ public partial class OCPCProjectDBContext : DbContext
         {
             entity.HasKey(e => e.ProjAo);
 
-            entity.ToTable("tblProjAO");
+            entity.ToTable("tblProjAO", tb => tb.HasTrigger("trgAfterUpdateOntblProjAo"));
 
             entity.HasIndex(e => e.ProjId, "FHProjID").IsDescending();
 
@@ -335,11 +354,11 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.AotypeId).HasColumnName("AOTypeId");
             entity.Property(e => e.ArchOwnerId).HasColumnName("ArchOwnerID");
             entity.Property(e => e.BoldBp)
-                .HasDefaultValueSql("(0)")
+                .HasDefaultValue(false)
                 .HasColumnName("BoldBP");
             entity.Property(e => e.ProjId).HasColumnName("ProjID");
-            entity.Property(e => e.ShowOnResults).HasDefaultValueSql("(0)");
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.ShowOnResults).HasDefaultValue(false);
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
 
             entity.HasOne(d => d.ArchOwner).WithMany(p => p.TblProjAos)
                 .HasForeignKey(d => d.ArchOwnerId)
@@ -355,22 +374,26 @@ public partial class OCPCProjectDBContext : DbContext
         {
             entity.HasKey(e => e.ProjConId);
 
-            entity.ToTable("tblProjCon", tb => tb.HasTrigger("tr_ProjCon_I"));
+            entity.ToTable("tblProjCon", tb =>
+            {
+                tb.HasTrigger("tr_ProjCon_I");
+                tb.HasTrigger("trgAfterUpdateOntblProjCon");
+            });
 
             entity.HasIndex(e => e.ProjId, "FHProjId").IsDescending();
 
             entity.Property(e => e.ProjConId).HasColumnName("ProjConID");
-            entity.Property(e => e.Apparent).HasDefaultValueSql("((0))");
-            entity.Property(e => e.AwardedTo).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Apparent).HasDefaultValue(false);
+            entity.Property(e => e.AwardedTo).HasDefaultValue(false);
             entity.Property(e => e.BidAmt).HasColumnType("money");
-            entity.Property(e => e.Bidding).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Bidding).HasDefaultValue(false);
             entity.Property(e => e.ConId).HasColumnName("ConID");
             entity.Property(e => e.HostingDateExtention).HasMaxLength(3);
-            entity.Property(e => e.IssuingOffice).HasDefaultValueSql("((0))");
+            entity.Property(e => e.IssuingOffice).HasDefaultValue(false);
             entity.Property(e => e.Lm)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("LM");
-            entity.Property(e => e.NotBidding).HasDefaultValueSql("((0))");
+            entity.Property(e => e.NotBidding).HasDefaultValue(false);
             entity.Property(e => e.Note).HasColumnType("ntext");
             entity.Property(e => e.Person).HasMaxLength(50);
             entity.Property(e => e.PrivatePwd).HasMaxLength(50);
@@ -380,7 +403,7 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(10)
                 .HasDefaultValueSql("((1))")
                 .HasComment("This controls what tblProjects BidDt they will be using");
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.TimeStamp).HasColumnType("datetime");
             entity.Property(e => e.Ucpwd)
                 .HasMaxLength(50)
@@ -400,12 +423,12 @@ public partial class OCPCProjectDBContext : DbContext
         {
             entity.HasKey(e => e.ProjCountyId);
 
-            entity.ToTable("tblProjCounty");
+            entity.ToTable("tblProjCounty", tb => tb.HasTrigger("trgAfterUpdateOntblProjCounty"));
 
             entity.Property(e => e.ProjCountyId).HasColumnName("ProjCountyID");
             entity.Property(e => e.CountyId).HasColumnName("CountyID");
             entity.Property(e => e.ProjId).HasColumnName("ProjID");
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
 
             entity.HasOne(d => d.County).WithMany(p => p.TblProjCounties)
                 .HasForeignKey(d => d.CountyId)
@@ -421,7 +444,11 @@ public partial class OCPCProjectDBContext : DbContext
         {
             entity.HasKey(e => e.ProjId);
 
-            entity.ToTable("tblProject", tb => tb.HasTrigger("tr_Project_U"));
+            entity.ToTable("tblProject", tb =>
+            {
+                tb.HasTrigger("tr_Project_U");
+                tb.HasTrigger("trgAfterUpdateOntblProject");
+            });
 
             entity.HasIndex(e => e.LocState, "LocState");
 
@@ -441,22 +468,22 @@ public partial class OCPCProjectDBContext : DbContext
 
             entity.Property(e => e.ArrivalDt).HasColumnType("smalldatetime");
             entity.Property(e => e.BendPc)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("BendPC");
             entity.Property(e => e.BidBond).HasMaxLength(20);
             entity.Property(e => e.BidDt).HasColumnType("datetime");
             entity.Property(e => e.BidDt2).HasColumnType("datetime");
             entity.Property(e => e.BidDt3).HasColumnType("datetime");
             entity.Property(e => e.BidDt4).HasColumnType("datetime");
-            entity.Property(e => e.BidPkg).HasDefaultValueSql("((0))");
+            entity.Property(e => e.BidPkg).HasDefaultValue(false);
             entity.Property(e => e.Brnote)
                 .HasMaxLength(180)
                 .HasColumnName("BRNote");
             entity.Property(e => e.BrresultsFrom)
                 .HasMaxLength(180)
                 .HasColumnName("BRResultsFrom");
-            entity.Property(e => e.BuildSolrIndex).HasDefaultValueSql("((1))");
-            entity.Property(e => e.CallBack).HasDefaultValueSql("((0))");
+            entity.Property(e => e.BuildSolrIndex).HasDefaultValue(true);
+            entity.Property(e => e.CallBack).HasDefaultValue(false);
             entity.Property(e => e.CheckSentDt).HasColumnType("smalldatetime");
             entity.Property(e => e.CompleteDt).HasMaxLength(150);
             entity.Property(e => e.Contact)
@@ -469,28 +496,28 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasColumnName("DFNote");
             entity.Property(e => e.DiPath).HasMaxLength(100);
             entity.Property(e => e.DirtId)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("DirtID");
             entity.Property(e => e.DrawingPath).HasMaxLength(100);
             entity.Property(e => e.DupArDt).HasColumnType("smalldatetime");
             entity.Property(e => e.DupTitle).HasMaxLength(20);
-            entity.Property(e => e.DwChk).HasDefaultValueSql("((0))");
+            entity.Property(e => e.DwChk).HasDefaultValue(false);
             entity.Property(e => e.EstCost).HasMaxLength(70);
             entity.Property(e => e.EstCost2).HasMaxLength(70);
             entity.Property(e => e.EstCost3).HasMaxLength(70);
             entity.Property(e => e.EstCost4).HasMaxLength(70);
             entity.Property(e => e.ExtendedDt).HasColumnType("datetime");
-            entity.Property(e => e.FutureWork).HasDefaultValueSql("((0))");
-            entity.Property(e => e.Hold).HasDefaultValueSql("((0))");
+            entity.Property(e => e.FutureWork).HasDefaultValue(false);
+            entity.Property(e => e.Hold).HasDefaultValue(false);
             entity.Property(e => e.ImportDt).HasColumnType("smalldatetime");
             entity.Property(e => e.IndexPdffiles)
-                .HasDefaultValueSql("((1))")
+                .HasDefaultValue(true)
                 .HasColumnName("IndexPDFFiles");
             entity.Property(e => e.InternalNote).HasColumnType("ntext");
-            entity.Property(e => e.InternetDownload).HasDefaultValueSql("((0))");
+            entity.Property(e => e.InternetDownload).HasDefaultValue(false);
             entity.Property(e => e.IssuingOffice).HasMaxLength(80);
             entity.Property(e => e.LastBidDt).HasMaxLength(150);
-            entity.Property(e => e.Latitude).HasDefaultValueSql("((0.0))");
+            entity.Property(e => e.Latitude).HasDefaultValue(0.0);
             entity.Property(e => e.LocAddr1).HasMaxLength(150);
             entity.Property(e => e.LocAddr2).HasMaxLength(150);
             entity.Property(e => e.LocCity).HasMaxLength(50);
@@ -500,16 +527,16 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.LocState2).HasMaxLength(2);
             entity.Property(e => e.LocState3).HasMaxLength(2);
             entity.Property(e => e.LocZip).HasMaxLength(10);
-            entity.Property(e => e.Longitude).HasDefaultValueSql("((0.0))");
-            entity.Property(e => e.Mandatory).HasDefaultValueSql("((0))");
-            entity.Property(e => e.Mandatory2).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Longitude).HasDefaultValue(0.0);
+            entity.Property(e => e.Mandatory).HasDefaultValue(false);
+            entity.Property(e => e.Mandatory2).HasDefaultValue(false);
             entity.Property(e => e.MaxViewPath).HasMaxLength(200);
-            entity.Property(e => e.NoPrint).HasDefaultValueSql("((0))");
-            entity.Property(e => e.NoSpecs).HasDefaultValueSql("((0))");
+            entity.Property(e => e.NoPrint).HasDefaultValue(false);
+            entity.Property(e => e.NoSpecs).HasDefaultValue(false);
             entity.Property(e => e.NonRefundAmt).HasColumnType("money");
             entity.Property(e => e.OnlineNote).HasMaxLength(80);
             entity.Property(e => e.Phldone)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("PHLdone");
             entity.Property(e => e.Phlnote)
                 .HasMaxLength(150)
@@ -525,51 +552,51 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.PreBidLoc).HasMaxLength(150);
             entity.Property(e => e.PreBidLoc2).HasMaxLength(150);
             entity.Property(e => e.PrebidAnd)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("PrebidAND");
             entity.Property(e => e.PrebidOr)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("PrebidOR");
-            entity.Property(e => e.PrevailingWage).HasDefaultValueSql("((0))");
+            entity.Property(e => e.PrevailingWage).HasDefaultValue(false);
             entity.Property(e => e.ProjNote).HasColumnType("ntext");
             entity.Property(e => e.ProjTimeStamp)
                 .IsRowVersion()
                 .IsConcurrencyToken();
-            entity.Property(e => e.Publish).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Publish).HasDefaultValue(false);
             entity.Property(e => e.PublishedFrom).HasMaxLength(30);
             entity.Property(e => e.PublishedFromDt).HasColumnType("smalldatetime");
-            entity.Property(e => e.Recycle).HasDefaultValueSql("((0))");
+            entity.Property(e => e.Recycle).HasDefaultValue(false);
             entity.Property(e => e.RefundAmt).HasColumnType("money");
             entity.Property(e => e.RegionId).HasColumnName("RegionID");
-            entity.Property(e => e.RenChk).HasDefaultValueSql("((0))");
+            entity.Property(e => e.RenChk).HasDefaultValue(false);
             entity.Property(e => e.ResultDt).HasColumnType("smalldatetime");
-            entity.Property(e => e.S11x17).HasDefaultValueSql("((0))");
-            entity.Property(e => e.S18x24).HasDefaultValueSql("((0))");
-            entity.Property(e => e.S24x36).HasDefaultValueSql("((0))");
-            entity.Property(e => e.S30x42).HasDefaultValueSql("((0))");
+            entity.Property(e => e.S11x17).HasDefaultValue(false);
+            entity.Property(e => e.S18x24).HasDefaultValue(false);
+            entity.Property(e => e.S24x36).HasDefaultValue(false);
+            entity.Property(e => e.S30x42).HasDefaultValue(false);
             entity.Property(e => e.S36x48)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("S36X48");
             entity.Property(e => e.ShipCheck).HasColumnType("money");
             entity.Property(e => e.ShowBr)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("ShowBR");
-            entity.Property(e => e.ShowOnWeb).HasDefaultValueSql("((0))");
-            entity.Property(e => e.ShowToAll).HasDefaultValueSql("((0))");
+            entity.Property(e => e.ShowOnWeb).HasDefaultValue(false);
+            entity.Property(e => e.ShowToAll).HasDefaultValue(false);
             entity.Property(e => e.SolrIndexDt).HasColumnType("datetime");
             entity.Property(e => e.SolrIndexPdfdt)
                 .HasColumnType("datetime")
                 .HasColumnName("SolrIndexPDFDt");
-            entity.Property(e => e.SpcChk).HasDefaultValueSql("((0))");
+            entity.Property(e => e.SpcChk).HasDefaultValue(false);
             entity.Property(e => e.SpecPath).HasMaxLength(100);
-            entity.Property(e => e.SpecsOnPlans).HasDefaultValueSql("((0))");
+            entity.Property(e => e.SpecsOnPlans).HasDefaultValue(false);
             entity.Property(e => e.Story).HasColumnType("ntext");
             entity.Property(e => e.StoryUnf)
                 .HasColumnType("ntext")
                 .HasColumnName("StoryUNF");
             entity.Property(e => e.StrAddenda)
                 .HasMaxLength(50)
-                .HasDefaultValueSql("('')")
+                .HasDefaultValue("")
                 .HasColumnName("strAddenda");
             entity.Property(e => e.StrBidDt)
                 .HasMaxLength(30)
@@ -590,16 +617,16 @@ public partial class OCPCProjectDBContext : DbContext
                 .HasMaxLength(30)
                 .HasColumnName("strPreBidDt2");
             entity.Property(e => e.SubApprov).HasMaxLength(50);
-            entity.Property(e => e.SyncStatus).HasDefaultValueSql("((1))");
+            entity.Property(e => e.SyncStatus).HasDefaultValue(1);
             entity.Property(e => e.Title).HasMaxLength(255);
             entity.Property(e => e.TopChk)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasComment("used in Maxviewprep to mark G3 prepped");
             entity.Property(e => e.Uc)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("UC");
             entity.Property(e => e.Ucpublic)
-                .HasDefaultValueSql("((0))")
+                .HasDefaultValue(false)
                 .HasColumnName("UCPublic");
             entity.Property(e => e.Ucpwd)
                 .HasMaxLength(50)
@@ -607,7 +634,7 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.Ucpwd2)
                 .HasMaxLength(50)
                 .HasColumnName("UCPWD2");
-            entity.Property(e => e.UnderCounter).HasDefaultValueSql("((0))");
+            entity.Property(e => e.UnderCounter).HasDefaultValue(false);
         });
 
         OnModelCreatingPartial(modelBuilder);

@@ -11,31 +11,31 @@ public partial class TblMember
 
     public DateTime? InsertDate { get; set; }
 
-    public string Company { get; set; }
+    public string? Company { get; set; }
 
     public bool Inactive { get; set; }
 
-    public string BillAddress { get; set; }
+    public string? BillAddress { get; set; }
 
-    public string BillCity { get; set; }
+    public string? BillCity { get; set; }
 
-    public string BillState { get; set; }
+    public string? BillState { get; set; }
 
-    public string BillZip { get; set; }
+    public string? BillZip { get; set; }
 
-    public string LastPayDate { get; set; }
+    public string? LastPayDate { get; set; }
 
     public DateTime? RenewalDate { get; set; }
 
-    public string Term { get; set; }
+    public string? Term { get; set; }
 
-    public string Div { get; set; }
+    public string? Div { get; set; }
 
-    public string Discipline { get; set; }
+    public string? Discipline { get; set; }
 
-    public string Note { get; set; }
+    public string? Note { get; set; }
 
-    public string MinorityStatus { get; set; }
+    public string? MinorityStatus { get; set; }
 
     /// <summary>
     /// 0 = Regular, 1 = Full, 2 = Partial
@@ -46,7 +46,7 @@ public partial class TblMember
 
     public DateTime? AcceptedTermsDt { get; set; }
 
-    public string DailyEmail { get; set; }
+    public string? DailyEmail { get; set; }
 
     public bool? Html { get; set; }
 
@@ -54,9 +54,9 @@ public partial class TblMember
 
     public bool? Cod { get; set; }
 
-    public byte[] TmStamp { get; set; }
+    public byte[]? TmStamp { get; set; }
 
-    public string PaperlessBilling { get; set; }
+    public string? PaperlessBilling { get; set; }
 
     public decimal? MemberCost { get; set; }
 
@@ -66,17 +66,17 @@ public partial class TblMember
 
     public decimal? AddPkgCost { get; set; }
 
-    public string ResourceDate { get; set; }
+    public string? ResourceDate { get; set; }
 
     public decimal? ResourceCost { get; set; }
 
-    public string WebAdDate { get; set; }
+    public string? WebAdDate { get; set; }
 
     public decimal? WebAdCost { get; set; }
 
     public bool? Phl { get; set; }
 
-    public string Email { get; set; }
+    public string? Email { get; set; }
 
     /// <summary>
     /// Favorites/IEN # control
@@ -91,39 +91,39 @@ public partial class TblMember
 
     public bool? Gcservices { get; set; }
 
-    public string ResourceStandard { get; set; }
+    public string? ResourceStandard { get; set; }
 
-    public string ResourceColor { get; set; }
+    public string? ResourceColor { get; set; }
 
-    public string ResourceLogo { get; set; }
+    public string? ResourceLogo { get; set; }
 
-    public string ResourceAdd { get; set; }
+    public string? ResourceAdd { get; set; }
 
-    public string Dba { get; set; }
+    public string? Dba { get; set; }
 
-    public string Dba2 { get; set; }
+    public string? Dba2 { get; set; }
 
-    public string Fka { get; set; }
+    public string? Fka { get; set; }
 
     public bool? Suspended { get; set; }
 
-    public string SuspendedDt { get; set; }
+    public string? SuspendedDt { get; set; }
 
-    public string Fax { get; set; }
+    public string? Fax { get; set; }
 
-    public string MailAddress { get; set; }
+    public string? MailAddress { get; set; }
 
-    public string MailCity { get; set; }
+    public string? MailCity { get; set; }
 
-    public string MailState { get; set; }
+    public string? MailState { get; set; }
 
-    public string MailZip { get; set; }
+    public string? MailZip { get; set; }
 
     public decimal? OverdueAmt { get; set; }
 
     public DateTime? OverdueDt { get; set; }
 
-    public string CalSort { get; set; }
+    public string? CalSort { get; set; }
 
     public bool? Pdfpkg { get; set; }
 
@@ -137,9 +137,11 @@ public partial class TblMember
 
     public bool? FreelanceEstimator { get; set; }
 
-    public string HowdUhearAboutUs { get; set; }
+    public string? HowdUhearAboutUs { get; set; }
 
-    public int SyncStatus { get; set; }
+    public string? PaymentTerm { get; set; }
+
+    public int? SyncStatus { get; set; }
 
     public virtual ICollection<TblContact> TblContacts { get; set; } = new List<TblContact>();
 }

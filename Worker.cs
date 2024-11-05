@@ -44,18 +44,18 @@ namespace SyncRoutineWS
             {
                 TimerCallback doWork = DoWork;
 
-                // Uncomment the following line to run the service immediately 
-                _timer = new Timer(doWork, null, TimeSpan.Zero, TimeSpan.FromDays(1));
+				// Uncomment the following line to run the service immediately 
+				//_timer = new Timer(doWork, null, TimeSpan.Zero, TimeSpan.FromDays(1));
 
-                // Uncomment the following block to run the service at midnight (for production)                
-                //DateTime now = DateTime.Now;
-                //DateTime nextMidnight = now.Date.AddDays(1); 
-                //TimeSpan timeUntilMidnight = nextMidnight - now;
-                //_timer = new Timer(doWork, null, timeUntilMidnight, TimeSpan.FromDays(1));
-                
+				// Uncomment the following block to run the service at midnight (for production)                
+				DateTime now = DateTime.Now;
+				DateTime nextMidnight = now.Date.AddDays(1);
+				TimeSpan timeUntilMidnight = nextMidnight - now;
+				_timer = new Timer(doWork, null, timeUntilMidnight, TimeSpan.FromDays(1));
 
-                // Cancel the timer when the service is stopping
-                _ = stoppingToken.Register(() => _timer?.Change(Timeout.Infinite, 0));
+
+				// Cancel the timer when the service is stopping
+				_ = stoppingToken.Register(() => _timer?.Change(Timeout.Infinite, 0));
             }
             else
             {

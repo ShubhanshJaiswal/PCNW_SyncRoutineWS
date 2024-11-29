@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace SyncRoutineWS.PCNWModel;
+﻿namespace SyncRoutineWS.PCNWModel;
 
 public partial class CityCounty
 {

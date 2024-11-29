@@ -38,10 +38,27 @@ public partial class OCPCProjectDBContext : DbContext
     public virtual DbSet<TblProjCounty> TblProjCounties { get; set; }
 
     public virtual DbSet<TblProject> TblProjects { get; set; }
+    public virtual DbSet<TblProjFieldChng> TblProjFieldChngs { get; set; }
 
   
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<TblProjFieldChng>(entity =>
+        {
+            entity.HasKey(e => e.ChngId);
+
+            entity.ToTable("tblProjFieldChng");
+
+            entity.HasIndex(e => new { e.EmailDt, e.ProjId, e.SortOrder }, "_dta_index_tblProjFieldChng_8_71671303__K4_K2_K6_1_3_5_7");
+
+            entity.Property(e => e.ChngId).HasColumnName("ChngID");
+            entity.Property(e => e.ChangedId).HasColumnName("ChangedID");
+            entity.Property(e => e.ChngDt).HasColumnType("datetime");
+            entity.Property(e => e.EmailDt).HasColumnType("datetime");
+            entity.Property(e => e.FieldName).HasMaxLength(20);
+            entity.Property(e => e.ProjId).HasColumnName("ProjID");
+            entity.Property(e => e.SyncDt).HasColumnType("datetime");
+        });
         modelBuilder.Entity<TblAddendum>(entity =>
         {
             entity.HasKey(e => e.AddendaId);

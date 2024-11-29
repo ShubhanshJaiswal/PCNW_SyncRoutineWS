@@ -8,12 +8,8 @@ namespace SyncRoutineWS.PCNWModel;
 
 public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 {
-    public PCNWProjectDBContext()
-    {
-    }
 
-    public PCNWProjectDBContext(DbContextOptions<PCNWProjectDBContext> options)
-        : base(options)
+    public PCNWProjectDBContext(DbContextOptions<PCNWProjectDBContext> options) : base(options)
     {
     }
 

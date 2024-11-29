@@ -1,98 +1,98 @@
 ﻿{
-   "CodeGenerationMode": 3,
-   "ContextClassName": "PCNWProjectDBContext",
-   "ContextNamespace": null,
-   "FilterSchemas": false,
-   "IncludeConnectionString": false,
-   "ModelNamespace": null,
-   "OutputContextPath": null,
-   "OutputPath": "PCNWModel",
-   "PreserveCasingWithRegex": true,
-   "ProjectRootNamespace": "SyncRoutineWS",
-   "Schemas": null,
-   "SelectedHandlebarsLanguage": 2,
-   "SelectedToBeGenerated": 0,
-   "T4TemplatePath": null,
-   "Tables": [
-      {
-         "Name": "[dbo].[Addenda]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Address]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[ArchOwner]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[BusinessEntity]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[CityCounty]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Contact]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Contractor]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[County]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Entity]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[EstCostDetails]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Member]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[PreBidInfo]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[ProjCounty]",
-         "ObjectType": 0
-      },
-      {
-         "Name": "[dbo].[Project]",
-         "ObjectType": 0
-      }
-   ],
-   "UiHint": null,
-   "UncountableWords": null,
-   "UseAsyncStoredProcedureCalls": true,
-   "UseBoolPropertiesWithoutDefaultSql": false,
-   "UseDatabaseNames": false,
-   "UseDateOnlyTimeOnly": false,
-   "UseDbContextSplitting": false,
-   "UseDecimalDataAnnotationForSprocResult": true,
-   "UseFluentApiOnly": true,
-   "UseHandleBars": false,
-   "UseHierarchyId": false,
-   "UseInflector": true,
-   "UseLegacyPluralizer": false,
-   "UseManyToManyEntity": false,
-   "UseNoDefaultConstructor": false,
-   "UseNoNavigations": false,
-   "UseNoObjectFilter": false,
-   "UseNodaTime": false,
-   "UseNullableReferences": false,
-   "UsePrefixNavigationNaming": false,
-   "UseSchemaFolders": false,
-   "UseSchemaNamespaces": false,
-   "UseSpatial": false,
-   "UseT4": false
+  "CodeGenerationMode": 3,
+  "ContextClassName": "PCNWProjectDBContext",
+  "ContextNamespace": null,
+  "FilterSchemas": false,
+  "IncludeConnectionString": false,
+  "ModelNamespace": null,
+  "OutputContextPath": null,
+  "OutputPath": "PCNWModel",
+  "PreserveCasingWithRegex": true,
+  "ProjectRootNamespace": "SyncRoutineWS",
+  "Schemas": null,
+  "SelectedHandlebarsLanguage": 2,
+  "SelectedToBeGenerated": 0,
+  "T4TemplatePath": null,
+  "Tables": [
+    {
+      "Name": "[dbo].[Addenda]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Address]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[ArchOwner]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[BusinessEntity]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[CityCounty]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Contact]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Contractor]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[County]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Entity]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[EstCostDetails]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Member]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[PreBidInfo]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[ProjCounty]",
+      "ObjectType": 0
+    },
+    {
+      "Name": "[dbo].[Project]",
+      "ObjectType": 0
+    }
+  ],
+  "UiHint": null,
+  "UncountableWords": null,
+  "UseAsyncStoredProcedureCalls": true,
+  "UseBoolPropertiesWithoutDefaultSql": false,
+  "UseDatabaseNames": false,
+  "UseDateOnlyTimeOnly": false,
+  "UseDbContextSplitting": false,
+  "UseDecimalDataAnnotationForSprocResult": true,
+  "UseFluentApiOnly": true,
+  "UseHandleBars": false,
+  "UseHierarchyId": false,
+  "UseInflector": true,
+  "UseLegacyPluralizer": false,
+  "UseManyToManyEntity": false,
+  "UseNoDefaultConstructor": false,
+  "UseNoNavigations": false,
+  "UseNoObjectFilter": false,
+  "UseNodaTime": false,
+  "UseNullableReferences": false,
+  "UsePrefixNavigationNaming": false,
+  "UseSchemaFolders": false,
+  "UseSchemaNamespaces": false,
+  "UseSpatial": false,
+  "UseT4": false
 }

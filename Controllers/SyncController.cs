@@ -107,7 +107,7 @@ public class SyncController
                 : new List<TblProjCounty>();
 
             //UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
-            UpdateProjectFunctionality(_OCOCContext.TblProjects.ToList(), _OCOCContext.TblProjCounties.ToList());
+            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
 
             // Query Arch Owners
 
@@ -1710,8 +1710,8 @@ public class SyncController
                     costFrom = cleanedEstCost.Trim().Replace("$", "");
                 }
 
-                costTo = Regex.Replace(costTo, @"[^\d]", "");
-                costFrom = Regex.Replace(costFrom, @"[^\d]", "");
+                //costTo = Regex.Replace(costTo, @"[^\d]", "");
+                //costFrom = Regex.Replace(costFrom, @"[^\d]", "");
 
 
 

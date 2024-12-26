@@ -23,7 +23,6 @@ public partial class Project
     public DateTime? PreBidDt { get; set; }
 
     public DateTime? BidDt { get; set; }
-    public string GeogPt { get; set; }
     public string? CompleteDt { get; set; }
 
     public string? LastBidDt { get; set; }

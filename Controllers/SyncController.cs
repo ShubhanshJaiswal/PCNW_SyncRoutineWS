@@ -105,9 +105,13 @@ public class SyncController
                         .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && updateProjectsIds.Contains(projCounty.ProjId))
                         .AsNoTracking()]
                 : new List<TblProjCounty>();
+            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
 
-            //UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
-            UpdateProjectFunctionality(_OCOCContext.TblProjects.ToList(), _OCOCContext.TblProjCounties.ToList());
+
+            //var prj = _OCOCContext.TblProjects.Where(m => m.ProjId >= 244683).ToList();
+            //var countied = _OCOCContext.TblProjCounties.Where(m => m.ProjId >= 244683).ToList();
+
+            //UpdateProjectFunctionality(prj, countied);
 
             // Query Arch Owners
 
@@ -848,7 +852,7 @@ public class SyncController
                         propProject.Dup1 = proj.Dup1;
                         propProject.Dup2 = proj.Dup2;
                         propProject.DupArDt = proj.DupArDt;
-                        propProject.GeogPt = proj.GeogPt;
+                        //propProject.GeogPt = proj.GeogPt;
                         propProject.DupTitle = proj.DupTitle;
                         propProject.DwChk = proj.DwChk;
                         propProject.EstCost = proj.EstCost;
@@ -944,8 +948,8 @@ public class SyncController
                         propProject.UnderCounter = proj.UnderCounter;
 
 
-                        var retryPolicy = Policy.Handle<SqlException>().WaitAndRetry(3, retryAttempt => TimeSpan.FromSeconds(retryAttempt));
-                        retryPolicy.Execute(() => _PCNWContext.SaveChanges());
+                        _PCNWContext.Entry(propProject).State = EntityState.Modified;
+                        var result = _PCNWContext.SaveChanges();
 
                         RecentProjectId = (int)propProject.ProjId;
                         SuccessProjectProcess++;
@@ -1061,7 +1065,7 @@ public class SyncController
                         Dup1 = proj.Dup1,
                         Dup2 = proj.Dup2,
                         DupArDt = proj.DupArDt,
-                        GeogPt = proj.GeogPt,
+                        //GeogPt = proj.GeogPt,
                         DupTitle = proj.DupTitle,
                         DwChk = proj.DwChk,
                         EstCost = proj.EstCost,

@@ -26,7 +26,6 @@ public partial class TblProject
     public DateTime? PreBidDt { get; set; }
 
     public DateTime? BidDt { get; set; }
-    public string GeogPt { get; set; }
 
     public string CompleteDt { get; set; }
 

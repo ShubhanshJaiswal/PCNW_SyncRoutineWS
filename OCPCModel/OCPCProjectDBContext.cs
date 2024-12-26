@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
+using SyncRoutineWS.PCNWModel;
 
 namespace SyncRoutineWS.OCPCModel;
 
@@ -492,6 +493,7 @@ public partial class OCPCProjectDBContext : DbContext
             entity.Property(e => e.BidDt2).HasColumnType("datetime");
             entity.Property(e => e.BidDt3).HasColumnType("datetime");
             entity.Property(e => e.BidDt4).HasColumnType("datetime");
+            entity.Property(p => p.GeogPt).HasColumnType("geography");
             entity.Property(e => e.BidPkg).HasDefaultValue(false);
             entity.Property(e => e.Brnote)
                 .HasMaxLength(180)

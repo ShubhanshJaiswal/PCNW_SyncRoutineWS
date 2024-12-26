@@ -92,7 +92,7 @@ public class SyncController
                         .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && tblProjectIds.Contains(projCounty.ProjId))]
                 : new List<TblProjCounty>();
 
-            ProcessProjectFunctionality(tblProjects, tblProjCounty);
+            //ProcessProjectFunctionality(tblProjects, tblProjCounty);
 
             var updateProjectsIds = _OCOCContext.TblProjFieldChngs
                 .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
@@ -107,7 +107,7 @@ public class SyncController
                 : new List<TblProjCounty>();
 
             //UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
-            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+            UpdateProjectFunctionality(_OCOCContext.TblProjects.ToList(), _OCOCContext.TblProjCounties.ToList());
 
             // Query Arch Owners
 
@@ -848,6 +848,7 @@ public class SyncController
                         propProject.Dup1 = proj.Dup1;
                         propProject.Dup2 = proj.Dup2;
                         propProject.DupArDt = proj.DupArDt;
+                        propProject.GeogPt = proj.GeogPt;
                         propProject.DupTitle = proj.DupTitle;
                         propProject.DwChk = proj.DwChk;
                         propProject.EstCost = proj.EstCost;
@@ -1060,6 +1061,7 @@ public class SyncController
                         Dup1 = proj.Dup1,
                         Dup2 = proj.Dup2,
                         DupArDt = proj.DupArDt,
+                        GeogPt = proj.GeogPt,
                         DupTitle = proj.DupTitle,
                         DwChk = proj.DwChk,
                         EstCost = proj.EstCost,

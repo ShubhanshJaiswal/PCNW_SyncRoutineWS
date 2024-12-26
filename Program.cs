@@ -39,10 +39,10 @@ namespace SyncRoutineWS
                     services.AddTransient<SyncController>();
                     services.AddHostedService<WorkerService>();
                     services.AddDbContext<OCPCProjectDBContext>(options =>
-                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("OCPCDefaultConnection"), options => options.CommandTimeout(180)), ServiceLifetime.Singleton);
+                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("OCPCDefaultConnection"), x => x.UseNetTopologySuite()), ServiceLifetime.Singleton);
 
                     services.AddDbContext<PCNWProjectDBContext>(options =>
-                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("PCNWDefaultConnection"), options => options.CommandTimeout(180)), ServiceLifetime.Singleton);
+                    options.UseSqlServer(hostContext.Configuration.GetConnectionString("PCNWDefaultConnection"), x => x.UseNetTopologySuite()), ServiceLifetime.Singleton);
 
                     services.AddIdentity<IdentityUser, IdentityRole>()
                     .AddDefaultTokenProviders()

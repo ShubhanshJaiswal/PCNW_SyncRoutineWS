@@ -79,7 +79,7 @@ public class SyncController
             var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
                 .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
 
-            var allprojectrecords= _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
+            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
 
             var tblProjects = allprojectrecords.Where(proj => proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId))
                 .ToList();
@@ -92,7 +92,7 @@ public class SyncController
                         .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && tblProjectIds.Contains(projCounty.ProjId))]
                 : new List<TblProjCounty>();
 
-            //ProcessProjectFunctionality(tblProjects, tblProjCounty);
+            ProcessProjectFunctionality(tblProjects, tblProjCounty);
 
             var updateProjectsIds = _OCOCContext.TblProjFieldChngs
                 .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
@@ -108,8 +108,8 @@ public class SyncController
             UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
 
 
-            //var prj = _OCOCContext.TblProjects.Where(m => m.ProjId >= 244683).ToList();
-            //var countied = _OCOCContext.TblProjCounties.Where(m => m.ProjId >= 244683).ToList();
+            //var prj = _OCOCContext.TblProjects.OrderByDescending(m=>m.ProjId).ToList();
+            //var countied = _OCOCContext.TblProjCounties.ToList();
 
             //UpdateProjectFunctionality(prj, countied);
 

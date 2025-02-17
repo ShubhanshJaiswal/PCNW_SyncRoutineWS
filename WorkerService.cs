@@ -20,7 +20,7 @@ namespace SyncRoutineWS
                     nextRunTime = nextRunTime.AddDays(1);
 
                 // Run immediately
-                int a = 0; // Change this to 1 for immediate execution, and 0 for production timing
+                int a = 1; // Change this to 1 for immediate execution, and 0 for production timing
                 var delay = a > 0 ? TimeSpan.Zero : nextRunTime - now;
 
                 _logger.LogInformation("Next run scheduled at: {time}", nextRunTime);

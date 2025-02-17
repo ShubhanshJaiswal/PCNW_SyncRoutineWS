@@ -81,8 +81,8 @@ public class SyncController
 
             var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
 
-            var tblProjects = allprojectrecords.Where(proj => proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId))
-                .ToList();
+            var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
+                                && proj.Publish.Value).ToList();
 
 
             var tblProjectIds = tblProjects.Select(m => m.ProjId);
@@ -98,7 +98,7 @@ public class SyncController
                 .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
                 .AsNoTracking()
                 .Select(m => m.ProjId).ToHashSet();
-            var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId)).ToList();
+            var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
 
             var tblupdateProjCounty = updateProjects.Count != 0
                 ? [.. _OCOCContext.TblProjCounties

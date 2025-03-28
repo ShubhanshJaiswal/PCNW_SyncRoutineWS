@@ -5,6 +5,7 @@ using Polly;
 using Serilog;
 using SyncRoutineWS.OCPCModel;
 using SyncRoutineWS.PCNWModel;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace SyncRoutineWS.Controllers;
@@ -231,6 +232,49 @@ public class SyncController
         return null;
     }
 
+    public string FetchProjNumber(DateTime? ArrivalDt)
+    {
+        try
+        {
+            if (!ArrivalDt.HasValue)
+                throw new ArgumentException("Arrival date cannot be null");
+
+            string projYearMonth = ArrivalDt.Value.ToString("yyMM");
+
+            // Find the maximum sequence number for the given month-year
+            int maxProjSequence = _PCNWContext.Projects
+                .Where(p => p.ArrivalDt.HasValue && p.ArrivalDt.Value.ToString("yyMM") == projYearMonth && p.ProjNumber.StartsWith(projYearMonth))
+                .Select(p => (int?)int.Parse(p.ProjNumber.Substring(4)))
+                .Max() ?? 0;
+
+            int projSequence = maxProjSequence + 1;
+            string newProjNumber;
+            int maxRetries = 9999;
+            int retry = 0;
+
+            do
+            {
+                newProjNumber = projYearMonth + projSequence.ToString("D4");
+
+                // Check if the generated ProjNumber already exists
+                bool exists = _PCNWContext.Projects.Any(p => p.ProjNumber == newProjNumber);
+
+                if (!exists)
+                    return newProjNumber;
+
+                projSequence++;
+                retry++;
+
+            } while (retry <= maxRetries);
+
+            throw new Exception("Failed to generate unique ProjNumber after multiple attempts.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Exception occurred while generating the ProjNumber");
+            throw;
+        }
+    }
     private void CreateProjectDirectory(Project propProject)
     {
         if (propProject != null)
@@ -1162,7 +1206,9 @@ public class SyncController
                         Ucpwd2 = proj.Ucpwd2,
                         UnderCounter = proj.UnderCounter,
                         SyncStatus = 0,
-                        SyncProId = proj.ProjId
+                        SyncProId = proj.ProjId,
+                        ProjNumber = proj.ArrivalDt != null ? FetchProjNumber(proj.ArrivalDt) : null
+
                     };
                     // Create Project directory
 

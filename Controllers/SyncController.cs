@@ -46,7 +46,7 @@ public class SyncController
                 _logger.LogError("base directory not found: {basedirectory}", baseDirectory);
                 throw new DirectoryNotFoundException($"base directory not found: {baseDirectory}");
             }
-            _logger.LogInformation($"Application started at {DateTime.Now}",DateTime.Now);
+            _logger.LogInformation($"Application started at {DateTime.Now}", DateTime.Now);
 
             #region SYNC FROM OCPCLive - PCNWTest
 
@@ -160,34 +160,60 @@ public class SyncController
         _logger.LogInformation("Sync Completed Successfully..");
     }
 
-    public string GetProjectPath(Project propProject)
+    public string? GetProjectPath(Project propProject)
     {
         string basePath = _fileUploadPath;
 
         string year = string.Empty;
         string month = string.Empty;
         string projNumber = string.Empty;
-
-        var project = _PCNWContext.Projects
-            .Where(p => p.ProjId == propProject.ProjId)
-            .Select(p => new { p.ProjNumber, p.ArrivalDt })
-            .FirstOrDefault();
-
-        if (project != null)
+        if (string.IsNullOrEmpty(propProject.ProjNumber))
         {
-            if (!string.IsNullOrEmpty(project.ProjNumber))
+
+            var project = _PCNWContext.Projects
+                .Where(p => p.ProjId == propProject.ProjId)
+                .Select(p => new { p.ProjNumber, p.ArrivalDt })
+                .FirstOrDefault();
+
+            if (project != null)
             {
-                year = "20" + project.ProjNumber.Substring(0, 2);
-                month = project.ProjNumber.Substring(2, 2);
-                projNumber = project.ProjNumber;
+                if (!string.IsNullOrEmpty(project.ProjNumber))
+                {
+                    year = string.Concat("20", project.ProjNumber.AsSpan(0, 2));
+                    month = project.ProjNumber.Substring(2, 2);
+                    projNumber = project.ProjNumber;
+                }
+                else if (project.ArrivalDt != null)
+                {
+                    string projYearMonth = project.ArrivalDt.Value.ToString("yyMM");
+
+                    int projCount = _PCNWContext.Projects
+                        .Where(p => p.ArrivalDt.HasValue && p.ArrivalDt.Value.ToString("yyMM") == projYearMonth)
+                        .Count();
+
+                    projNumber = projYearMonth + projCount.ToString("D4");
+
+                    var projToUpdate = _PCNWContext.Projects.Find(propProject.ProjId);
+                    if (projToUpdate != null)
+                    {
+                        projToUpdate.ProjNumber = projNumber;
+                        _PCNWContext.SaveChanges();
+                    }
+
+                    year = string.Concat("20", projNumber.AsSpan(0, 2));
+                    month = projNumber.Substring(2, 2);
+                }
+
+                string projectPath = Path.Combine(basePath, year, month, projNumber);
+                return projectPath;
             }
-            else if (project.ArrivalDt != null)
+            else if (propProject.ArrivalDt != null)
             {
-                string projYearMonth = project.ArrivalDt.Value.ToString("yyMM");
+                string projYearMonth = propProject.ArrivalDt.Value.ToString("yyMM");
 
                 int projCount = _PCNWContext.Projects
                     .Where(p => p.ArrivalDt.HasValue && p.ArrivalDt.Value.ToString("yyMM") == projYearMonth)
-                    .Count();
+                    .Count() + 1;
 
                 projNumber = projYearMonth + projCount.ToString("D4");
 
@@ -198,32 +224,18 @@ public class SyncController
                     _PCNWContext.SaveChanges();
                 }
 
-                year = "20" + projNumber.Substring(0, 2);
+                year = string.Concat("20", projNumber.AsSpan(0, 2));
                 month = projNumber.Substring(2, 2);
-            }
 
-            string projectPath = Path.Combine(basePath, year, month, projNumber);
-            return projectPath;
+                string projectPath = Path.Combine(basePath, year, month, projNumber);
+                return projectPath;
+            }
         }
-        else if (propProject.ArrivalDt != null)
+        else
         {
-            string projYearMonth = propProject.ArrivalDt.Value.ToString("yyMM");
-
-            int projCount = _PCNWContext.Projects
-                .Where(p => p.ArrivalDt.HasValue && p.ArrivalDt.Value.ToString("yyMM") == projYearMonth)
-                .Count() + 1;
-
-            projNumber = projYearMonth + projCount.ToString("D4");
-
-            var projToUpdate = _PCNWContext.Projects.Find(propProject.ProjId);
-            if (projToUpdate != null)
-            {
-                projToUpdate.ProjNumber = projNumber;
-                _PCNWContext.SaveChanges();
-            }
-
-            year = "20" + projNumber.Substring(0, 2);
-            month = projNumber.Substring(2, 2);
+            year = string.Concat("20", propProject.ProjNumber.AsSpan(0, 2));
+            month = propProject.ProjNumber.Substring(2, 2);
+            projNumber = propProject.ProjNumber;
 
             string projectPath = Path.Combine(basePath, year, month, projNumber);
             return projectPath;
@@ -851,7 +863,7 @@ public class SyncController
         foreach (TblProject proj in tblProjects)
         {
             try
-            
+
             {
                 _logger.LogInformation($"Starting sync for Project ID {proj.ProjId}.");
                 Project propProject;
@@ -1634,19 +1646,19 @@ public class SyncController
             {
                 try
                 {
-                        var newProjCounty = new ProjCounty
-                        {
-                            ProjId = RecentProjectId,
-                            CountyId = pc.CountyId,
-                            SyncStatus = 0,
-                            SyncProCouId = pc.ProjCountyId
-                        };
+                    var newProjCounty = new ProjCounty
+                    {
+                        ProjId = RecentProjectId,
+                        CountyId = pc.CountyId,
+                        SyncStatus = 0,
+                        SyncProCouId = pc.ProjCountyId
+                    };
 
-                        _PCNWContext.ProjCounties.Add(newProjCounty);
-                        _logger.LogInformation($"Added new ProjCounty for County ID {pc.CountyId}.");
-                        SuccessProjCountyProcess++;
-                    var abc = _OCOCContext.TblProjCounties.Where(m =>    m.ProjId == proj.ProjId)
-                        .ExecuteUpdate(s => s.SetProperty(u => u.SyncStatus, u => 3));                    
+                    _PCNWContext.ProjCounties.Add(newProjCounty);
+                    _logger.LogInformation($"Added new ProjCounty for County ID {pc.CountyId}.");
+                    SuccessProjCountyProcess++;
+                    var abc = _OCOCContext.TblProjCounties.Where(m => m.ProjId == proj.ProjId)
+                        .ExecuteUpdate(s => s.SetProperty(u => u.SyncStatus, u => 3));
                 }
                 catch (Exception innerEx)
                 {
@@ -1671,7 +1683,7 @@ public class SyncController
             .Where(p => p.ProjId == recentPCNWProjectId)
             .ToList();
 
-        if(proj.PreBidDt !=null || proj.PreBidDt2 != null)
+        if (proj.PreBidDt != null || proj.PreBidDt2 != null)
         {
             _PCNWContext.PreBidInfos.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
         }
@@ -1681,18 +1693,18 @@ public class SyncController
         {
             var preBidDate = proj.PreBidDt.Value.Date;
 
-                var newPreBidInfo = new PreBidInfo
-                {
-                    PreBidDate = preBidDate,
-                    PreBidTime = proj.PreBidDt.Value.ToString("HH:mm"),
-                    Location = proj.PreBidLoc,
-                    PreBidAnd = proj.PrebidAnd ?? false,
-                    ProjId = recentPCNWProjectId,
-                    UndecidedPreBid = false,
-                    Pst = "PT",
-                    SyncStatus = 0
-                };
-                _PCNWContext.PreBidInfos.Add(newPreBidInfo);
+            var newPreBidInfo = new PreBidInfo
+            {
+                PreBidDate = preBidDate,
+                PreBidTime = proj.PreBidDt.Value.ToString("HH:mm"),
+                Location = proj.PreBidLoc,
+                PreBidAnd = proj.PrebidAnd ?? false,
+                ProjId = recentPCNWProjectId,
+                UndecidedPreBid = false,
+                Pst = "PT",
+                SyncStatus = 0
+            };
+            _PCNWContext.PreBidInfos.Add(newPreBidInfo);
         }
 
         // Handle PreBidDt2
@@ -1701,17 +1713,17 @@ public class SyncController
             var preBidDate = proj.PreBidDt2.Value.Date;
 
             var newPreBidInfo = new PreBidInfo
-                {
-                    PreBidDate = preBidDate,
-                    PreBidTime = proj.PreBidDt2.Value.ToString("HH:mm"),
-                    Location = proj.PreBidLoc2,
-                    PreBidAnd = proj.PrebidAnd ?? false,
-                    ProjId = recentPCNWProjectId,
-                    UndecidedPreBid = false,
-                    Pst = "PT",
-                    SyncStatus = 0
-                };
-                _PCNWContext.PreBidInfos.Add(newPreBidInfo);
+            {
+                PreBidDate = preBidDate,
+                PreBidTime = proj.PreBidDt2.Value.ToString("HH:mm"),
+                Location = proj.PreBidLoc2,
+                PreBidAnd = proj.PrebidAnd ?? false,
+                ProjId = recentPCNWProjectId,
+                UndecidedPreBid = false,
+                Pst = "PT",
+                SyncStatus = 0
+            };
+            _PCNWContext.PreBidInfos.Add(newPreBidInfo);
         }
 
     }
@@ -1769,19 +1781,19 @@ public class SyncController
 
                 _PCNWContext.EstCostDetails.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
 
-                
-                    // Add new record
-                    var newEstCostDetail = new EstCostDetail
-                    {
-                        EstCostTo = costTo,
-                        EstCostFrom = costFrom,
-                        Description = description,
-                        ProjId = recentPCNWProjectId,
-                        Removed = false,
-                        RangeSign = rangeSign,
-                        SyncStatus = 0
-                    };
-                    _PCNWContext.EstCostDetails.Add(newEstCostDetail);
+
+                // Add new record
+                var newEstCostDetail = new EstCostDetail
+                {
+                    EstCostTo = costTo,
+                    EstCostFrom = costFrom,
+                    Description = description,
+                    ProjId = recentPCNWProjectId,
+                    Removed = false,
+                    RangeSign = rangeSign,
+                    SyncStatus = 0
+                };
+                _PCNWContext.EstCostDetails.Add(newEstCostDetail);
             }
 
         }
@@ -1790,6 +1802,6 @@ public class SyncController
         ProcessEstCost(proj.EstCost2);
         ProcessEstCost(proj.EstCost3);
         ProcessEstCost(proj.EstCost4);
-        
+
     }
 }

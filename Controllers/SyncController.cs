@@ -85,6 +85,8 @@ public class SyncController
             var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
                                 && proj.Publish.Value).ToList();
 
+            //var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
+
 
             var tblProjectIds = tblProjects.Select(m => m.ProjId);
             var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
@@ -106,8 +108,17 @@ public class SyncController
                         .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && updateProjectsIds.Contains(projCounty.ProjId))
                         .AsNoTracking()]
                 : new List<TblProjCounty>();
-            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+             UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
 
+
+            //creating the directory for projnumbers(past 2 months)
+            var pastMonthDate = DateTime.Now.AddMonths(-1);
+            int pastMonth = pastMonthDate.Month;
+            int pastYear = pastMonthDate.Year;
+
+            var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m=>m.ProjNumber);
+
+            UpdateDirectory(ProjNumbers);
 
             //var prj = _OCOCContext.TblProjects.OrderByDescending(m=>m.ProjId).ToList();
             //var countied = _OCOCContext.TblProjCounties.ToList();
@@ -160,6 +171,50 @@ public class SyncController
         _logger.LogInformation("Sync Completed Successfully..");
     }
 
+    public void UpdateDirectory(IEnumerable<string> projectNumbers)
+    {
+        try
+        {
+            if(projectNumbers is not null)
+            {
+                foreach(var item in projectNumbers)
+                {
+                    try
+                    {
+                        string basePath = _fileUploadPath;
+                        string projectPath = Path.Combine(basePath, string.Concat("20", item.AsSpan(0, 2)), item.Substring(2, 2), item);
+                        if (string.IsNullOrEmpty(projectPath))
+                        {
+                            continue;
+                        }
+                        if (!Directory.Exists(projectPath))
+                        {
+                            _logger.LogInformation($"Starting Directory Creation for Project Number {item}.");                            
+
+                            LocalCreateFolder(Path.Combine(projectPath, "Uploads"));
+                            LocalCreateFolder(Path.Combine(projectPath, "Addenda"));
+                            LocalCreateFolder(Path.Combine(projectPath, "Bid Results"));
+                            LocalCreateFolder(Path.Combine(projectPath, "PHL"));
+                            LocalCreateFolder(Path.Combine(projectPath, "Plans"));
+                            LocalCreateFolder(Path.Combine(projectPath, "Specs"));
+
+                            _logger.LogInformation($"Directory Created for Project Number {item}.");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        _logger.LogError($"An error occurred while Directory Creation of Project Number {item}.");
+                        continue;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while Directory Creation.");
+            throw;
+        }
+    }
     public string? GetProjectPath(Project propProject)
     {
         string basePath = _fileUploadPath;
@@ -253,13 +308,22 @@ public class SyncController
 
             string projYearMonth = ArrivalDt.Value.ToString("yyMM");
 
-            // Find the maximum sequence number for the given month-year
-            int maxProjSequence = _PCNWContext.Projects
-                .Where(p => p.ArrivalDt.HasValue && p.ArrivalDt.Value.ToString("yyMM") == projYearMonth && p.ProjNumber.StartsWith(projYearMonth))
-                .Select(p => (int?)int.Parse(p.ProjNumber.Substring(4)))
-                .Max() ?? 0;
+            //// Find the maximum sequence number for the given month-year
+            //int projYear = 2000 + int.Parse(projYearMonth.Substring(0, 2));
+            //int projMonth = int.Parse(projYearMonth.Substring(2, 2));
 
-            int projSequence = maxProjSequence + 1;
+            //int maxProjSequence = _PCNWContext.Projects
+            //    .Where(p => p.ArrivalDt.HasValue &&
+            //                p.ArrivalDt.Value.Year == projYear &&
+            //                p.ArrivalDt.Value.Month == projMonth &&
+            //                p.ProjNumber.StartsWith(projYearMonth))
+            //    .AsEnumerable()
+            //    .Select(p => (int?)int.Parse(p.ProjNumber.Substring(4)))
+            //    .Max() ?? 0;
+
+
+            //int projSequence = maxProjSequence + 1;
+           int projSequence = 1;
             string newProjNumber;
             int maxRetries = 9999;
             int retry = 0;
@@ -1006,7 +1070,6 @@ public class SyncController
 
                         _PCNWContext.Entry(propProject).State = EntityState.Modified;
                         var result = _PCNWContext.SaveChanges();
-
                         RecentProjectId = (int)propProject.ProjId;
                         SuccessProjectProcess++;
                     }
@@ -1015,6 +1078,17 @@ public class SyncController
                         _logger.LogWarning($"Project ID {proj.ProjId} not found for update.");
                         FailProjectProcess++;
                         continue;
+                    }
+                    try
+                    {
+                        _logger.LogInformation($"Creating Directory for Project ID {proj.ProjId}");
+                        CreateProjectDirectory(propProject);
+                        _logger.LogInformation($"Successfully Created Directory for Project ID {proj.ProjId}");
+                    }
+                    catch (Exception)
+                    {
+                        _logger.LogInformation($"Failed in Creating Directory for Project ID {proj.ProjId}.");
+                        break;
                     }
                 }
                 List<TblProjCounty> lstpc = tblProjCounty.Where(prCou => prCou.ProjId == proj.ProjId).ToList();

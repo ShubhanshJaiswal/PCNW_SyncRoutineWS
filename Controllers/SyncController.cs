@@ -1074,14 +1074,14 @@ public class SyncController
         {
             try
             {
-                _logger.LogInformation($"Starting sync for Project ID {proj.ProjId}.");
+                _logger.LogInformation($"Starting sync for OCPCProject ID {proj.ProjId}.");
                 Project propProject;
                 int RecentProjectId = 0;
 
                 // Check if project already exists in _PCNWContext
                 if (_PCNWContext.Projects.AsNoTracking().Any(m => m.SyncProId == proj.ProjId))
                 {
-                    _logger.LogInformation($"Project ID {proj.ProjId} already exists in PCNWContext.");
+                    _logger.LogInformation($"OCPCProject ID {proj.ProjId} already exists in PCNWContext.");
                     var record = _OCOCContext.TblProjects.AsNoTracking().FirstOrDefault(m => m.ProjId == proj.ProjId);
                     if (record != null)
                     {

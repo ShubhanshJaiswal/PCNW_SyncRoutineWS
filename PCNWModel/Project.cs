@@ -309,6 +309,7 @@ public partial class Project
     public int SyncStatus { get; set; }
 
     public int? SyncProId { get; set; }
+    public DateTime SyncDate { get; set; } = DateTime.Now;
 
     public virtual ICollection<Addendum> Addenda { get; set; } = new List<Addendum>();
 

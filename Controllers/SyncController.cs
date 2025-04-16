@@ -1067,6 +1067,7 @@ public class SyncController
                         propProject.Ucpwd2 = proj.Ucpwd2;
                         propProject.UnderCounter = proj.UnderCounter;
 
+                        if (propProject.PlanNo == 400) propProject.FutureWork = true; 
 
                         _PCNWContext.Entry(propProject).State = EntityState.Modified;
                         var result = _PCNWContext.SaveChanges();
@@ -1296,6 +1297,8 @@ public class SyncController
                         ProjNumber = proj.ArrivalDt != null ? FetchProjNumber(proj.ArrivalDt) : null
 
                     };
+                    if (propProject.PlanNo == 400) propProject.FutureWork = true;
+
                     // Create Project directory
 
                     _logger.LogInformation($"Inserting new Project ID {proj.ProjId} into PCNWContext.");

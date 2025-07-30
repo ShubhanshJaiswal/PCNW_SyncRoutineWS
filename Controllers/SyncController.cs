@@ -153,12 +153,16 @@ public class SyncController
             }
 
             // Step 3: Fetch the mismatched project records and counties from OCPC
+            var ids = mismatchedProjectIds.ToArray(); // force simple SQL generation
+
             var mismatchedProjects = _OCOCContext.TblProjects
-                .Where(p => mismatchedProjectIds.Contains(p.ProjId))
-                .ToList();
+    .AsEnumerable() // switch to LINQ to Objects
+    .Where(p => mismatchedProjectIds.Contains(p.ProjId))
+    .ToList();
 
             var mismatchedProjCounties = _OCOCContext.TblProjCounties
-                .Where(c => mismatchedProjectIds.Contains(c.ProjId))
+    .AsEnumerable() // switch to LINQ to Objects
+                .Where(c => ids.Contains(c.ProjId))
                 .ToList();
             _logger.LogInformation("Found {0} mismatched projects.", mismatchedProjectIds.Count);
             // Step 4: Call your existing function

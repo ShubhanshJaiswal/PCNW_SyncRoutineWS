@@ -6,6 +6,7 @@ using Serilog;
 using SyncRoutineWS.OCPCModel;
 using SyncRoutineWS.PCNWModel;
 using System.IO;
+using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
 
 namespace SyncRoutineWS.Controllers;
@@ -52,73 +53,70 @@ public class SyncController
 
             //Member Sync code
 
-            //var businessEntityEmails = _PCNWContext.BusinessEntities
-            //                   .Select(be => be.BusinessEntityEmail)
-            //                   .ToHashSet();
+            var businessEntityEmails = _PCNWContext.BusinessEntities
+                                .Select(be => be.BusinessEntityEmail)
+                                .ToHashSet();
+            var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet(); ;
 
-            //               var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-            //                                    join con in _OCOCContext.TblContacts
-            //                                    on mem.Id equals con.Id
-            //                                    where (con.SyncStatus == 1 && !businessEntityEmails.Contains(con.Email))
-            //                                    || con.SyncStatus == 2
-            //                                    select mem)
-            //                                    .Take(1).OrderBy(m => m.Id)
-            //                                    .AsNoTracking()
-            //                                    .ToList();
+            var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+                                 where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
+                                 select mem).OrderBy(m => m.Id)
+                                 .AsNoTracking()
+                                 .ToList();
 
-            //               var memberids = tblOCPCMember.Select(m => m.Id).ToList();
+            var memberids = tblOCPCMember.Select(m => m.Id).ToList();
 
-            //               var tblOCPCContact = _OCOCContext.TblContacts.Where(con => (con.SyncStatus == 1 || con.SyncStatus == 2))
-            //                   .AsNoTracking()
-            //                   .ToList();
+            var tblOCPCContact = _OCOCContext.TblContacts
+                .AsNoTracking()
+                .ToList();
 
-            //               tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
-            //               ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+            tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
+            ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
             // project sync code
 
-            var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
-                .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
+            //var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
+            //    .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
 
-            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
+            //var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
 
-            var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
-                                && proj.Publish.Value).ToList();
+            //var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
+            //                    && proj.Publish.Value).ToList();
 
-            //var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
-
-
-            var tblProjectIds = tblProjects.Select(m => m.ProjId);
-            var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
-            var tblProjCounty = tblProjects.Count != 0
-                ? [.. allcountiesrecords
-                        .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && tblProjectIds.Contains(projCounty.ProjId))]
-                : new List<TblProjCounty>();
-
-            ProcessProjectFunctionality(tblProjects, tblProjCounty);
-
-            var updateProjectsIds = _OCOCContext.TblProjFieldChngs
-                .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
-                .AsNoTracking()
-                .Select(m => m.ProjId).ToHashSet();
-            var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
-
-            var tblupdateProjCounty = updateProjects.Count != 0
-                ? [.. _OCOCContext.TblProjCounties
-                        .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && updateProjectsIds.Contains(projCounty.ProjId))
-                        .AsNoTracking()]
-                : new List<TblProjCounty>();
-             UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+            ////var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
 
 
-            //creating the directory for projnumbers(past 2 months)
-            var pastMonthDate = DateTime.Now.AddMonths(-1);
-            int pastMonth = pastMonthDate.Month;
-            int pastYear = pastMonthDate.Year;
+            //var tblProjectIds = tblProjects.Select(m => m.ProjId);
+            //var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
+            //var tblProjCounty = tblProjects.Count != 0
+            //    ? [.. allcountiesrecords
+            //            .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && tblProjectIds.Contains(projCounty.ProjId))]
+            //    : new List<TblProjCounty>();
 
-            var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m=>m.ProjNumber);
+            //ProcessProjectFunctionality(tblProjects, tblProjCounty);
 
-            UpdateDirectory(ProjNumbers);
+            //var updateProjectsIds = _OCOCContext.TblProjFieldChngs
+            //    .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
+            //    .AsNoTracking()
+            //    .Select(m => m.ProjId).ToHashSet();
+            //var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
+
+            //var tblupdateProjCounty = updateProjects.Count != 0
+            //    ? [.. _OCOCContext.TblProjCounties
+            //            .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && updateProjectsIds.Contains(projCounty.ProjId))
+            //            .AsNoTracking()]
+            //    : new List<TblProjCounty>();
+            // UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+
+
+            ////creating the directory for projnumbers(past 2 months)
+            //var pastMonthDate = DateTime.Now.AddMonths(-1);
+            //int pastMonth = pastMonthDate.Month;
+            //int pastYear = pastMonthDate.Year;
+
+            //var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m=>m.ProjNumber);
+
+            //UpdateDirectory(ProjNumbers);
 
             //var prj = _OCOCContext.TblProjects.OrderByDescending(m=>m.ProjId).ToList();
             //var countied = _OCOCContext.TblProjCounties.ToList();
@@ -175,9 +173,9 @@ public class SyncController
     {
         try
         {
-            if(projectNumbers is not null)
+            if (projectNumbers is not null)
             {
-                foreach(var item in projectNumbers)
+                foreach (var item in projectNumbers)
                 {
                     try
                     {
@@ -189,7 +187,7 @@ public class SyncController
                         }
                         if (!Directory.Exists(projectPath))
                         {
-                            _logger.LogInformation($"Starting Directory Creation for Project Number {item}.");                            
+                            _logger.LogInformation($"Starting Directory Creation for Project Number {item}.");
 
                             LocalCreateFolder(Path.Combine(projectPath, "Uploads"));
                             LocalCreateFolder(Path.Combine(projectPath, "Addenda"));
@@ -323,7 +321,7 @@ public class SyncController
 
 
             //int projSequence = maxProjSequence + 1;
-           int projSequence = 1;
+            int projSequence = 1;
             string newProjNumber;
             int maxRetries = 9999;
             int retry = 0;
@@ -1067,7 +1065,7 @@ public class SyncController
                         propProject.Ucpwd2 = proj.Ucpwd2;
                         propProject.UnderCounter = proj.UnderCounter;
 
-                        if (propProject.PlanNo == 400) propProject.FutureWork = true; 
+                        if (propProject.PlanNo == 400) propProject.FutureWork = true;
 
                         _PCNWContext.Entry(propProject).State = EntityState.Modified;
                         var result = _PCNWContext.SaveChanges();
@@ -1409,22 +1407,42 @@ public class SyncController
                             lastBusinessEntityId = _PCNWContext.BusinessEntities.Max(be => be.BusinessEntityId);
                             break;
 
-                        case 2: // Update Existing Member
-                            propBussEnt = _PCNWContext.BusinessEntities.FirstOrDefault(be => be.BusinessEntityName == member.Company);
+                        default: // Update Existing Member
+                            propBussEnt = _PCNWContext.BusinessEntities.FirstOrDefault(be => be.SyncMemId == member.Id);
+
                             if (propBussEnt != null)
                             {
                                 propBussEnt.BusinessEntityName = member.Company;
                                 propBussEnt.BusinessEntityEmail = member.Email;
-                                _PCNWContext.Entry(propBussEnt).State = EntityState.Modified;
+                                //_PCNWContext.Entry(propBussEnt).State = EntityState.Modified;
+                                _PCNWContext.Update(propBussEnt);
                                 _PCNWContext.SaveChanges();
                                 _logger.LogInformation($"Member ID {member.Id} updated in BusinessEntity.");
                                 lastBusinessEntityId = propBussEnt.BusinessEntityId;
                             }
+                            else
+                            {
+                                propBussEnt = new BusinessEntity
+                                {
+                                    BusinessEntityName = member.Company,
+                                    BusinessEntityEmail = member.Email,
+                                    BusinessEntityPhone = "",
+                                    IsMember = true,
+                                    IsContractor = false,
+                                    IsArchitect = false,
+                                    OldMemId = member.Id,
+                                    OldConId = 0,
+                                    OldAoId = 0,
+                                    SyncStatus = 0,
+                                    SyncMemId = member.Id
+                                };
+                                _PCNWContext.BusinessEntities.Add(propBussEnt);
+                                _PCNWContext.SaveChanges();
+                                _logger.LogInformation($"Member ID {member.Id} added to BusinessEntity.");
+                                lastBusinessEntityId = _PCNWContext.BusinessEntities.Max(be => be.BusinessEntityId);
+                            }
                             break;
 
-                        default:
-                            _logger.LogWarning($"Member ID {member.Id} has unsupported SyncStatus: {member.SyncStatus}. Skipping.");
-                            continue;
                     }
 
                     // Synchronize member data with PCNW tables
@@ -1435,7 +1453,7 @@ public class SyncController
                     _logger.LogInformation($"Member ID {member.Id} successfully updated to BusinessEntity and related tables.");
 
                     // Process associated contacts
-                    var contacts = tblOCPCContact.Where(c => c.Id == member.Id && (c.SyncStatus == 1 || c.SyncStatus == 2));
+                    var contacts = tblOCPCContact;
                     _logger.LogInformation($"Total Contacts {contacts.Count()} found for Member ID {member.Id}.");
 
                     foreach (var contact in contacts)
@@ -1484,8 +1502,8 @@ public class SyncController
                                     _PCNWContext.Contacts.Add(propCont);
                                     break;
 
-                                case 2: // Update Existing Contact
-                                    propCont = _PCNWContext.Contacts.FirstOrDefault(c => c.BusinessEntityId == lastBusinessEntityId);
+                                default: // Update Existing Contact
+                                    propCont = _PCNWContext.Contacts.FirstOrDefault(c => c.BusinessEntityId == lastBusinessEntityId && c.SyncConId==contact.ConId);
                                     if (propCont != null)
                                     {
                                         propCont.ContactName = contact.Contact;
@@ -1493,6 +1511,42 @@ public class SyncController
                                         propCont.ContactPhone = contact.Phone;
                                         propCont.ContactTitle = contact.Title;
                                         _PCNWContext.Entry(propCont).State = EntityState.Modified;
+                                    }
+                                    else
+                                    {
+                                        userId = Guid.Empty;
+                                        mainContactExists = true;
+
+                                        if (!string.IsNullOrEmpty(contact.Email) && !string.IsNullOrEmpty(contact.Password))
+                                        {
+                                            var user = new IdentityUser { Email = contact.Email, UserName = contact.Email };
+                                            var result = _userManager.CreateAsync(user, contact.Password).GetAwaiter().GetResult();
+                                            if (!result.Succeeded) throw new Exception($"Error creating user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+
+                                            var addRole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
+                                            if (!addRole.Succeeded) throw new Exception($"Error adding role: {string.Join(", ", addRole.Errors.Select(e => e.Description))}");
+
+                                            if (!Guid.TryParse(user.Id, out userId)) throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
+
+                                            mainContactExists = _PCNWContext.Contacts.Any(c => c.BusinessEntityId == lastBusinessEntityId && c.MainContact == true);
+                                        }
+
+                                        propCont = new Contact
+                                        {
+                                            UserId = userId,
+                                            CompType = 1,
+                                            MainContact = !mainContactExists,
+                                            Active = !member.Inactive,
+                                            ContactName = contact.Contact,
+                                            ContactEmail = contact.Email,
+                                            Password = contact.Password,
+                                            BusinessEntityId = lastBusinessEntityId,
+                                            ContactPhone = contact.Phone,
+                                            ContactTitle = contact.Title,
+                                            SyncStatus = 0,
+                                            SyncConId = contact.ConId
+                                        };
+                                        _PCNWContext.Contacts.Add(propCont);
                                     }
                                     break;
                             }
@@ -1539,132 +1593,30 @@ public class SyncController
             Member propMem;
             if (member.SyncStatus == 1)
             {
-                propMem = new Member
-                {
-                    Inactive = member.Inactive,
-                    InsertDate = (DateTime)member.InsertDate!,
-                    LastPayDate = member.LastPayDate,
-                    RenewalDate = member.RenewalDate,
-                    Term = member.Term,
-                    Div = member.Div,
-                    Discipline = member.Discipline,
-                    Note = member.Note,
-                    MinorityStatus = member.MinorityStatus,
-                    MemberType = member.MemberType,
-                    AcceptedTerms = member.AcceptedTerms,
-                    AcceptedTermsDt = member.AcceptedTermsDt,
-                    DailyEmail = member.DailyEmail,
-                    Html = member.Html,
-                    Overdue = member.Overdue,
-                    Cod = member.Cod,
-                    PaperlessBilling = member.PaperlessBilling,
-                    MemberCost = member.MemberCost,
-                    MagCost = member.MagCost,
-                    ArchPkgCost = member.ArchPkgCost,
-                    AddPkgCost = member.AddPkgCost,
-                    ResourceDate = member.ResourceDate,
-                    ResourceCost = member.ResourceCost,
-                    WebAdDate = member.WebAdDate,
-                    WebAdCost = member.WebAdCost,
-                    Phl = member.Phl,
-                    Email = member.Email,
-                    NameField = member.NameField,
-                    FavExp = member.FavExp,
-                    Grace = member.Grace,
-                    ConId = member.ConId,
-                    Gcservices = member.Gcservices,
-                    ResourceStandard = member.ResourceStandard,
-                    ResourceColor = member.ResourceColor,
-                    ResourceLogo = member.ResourceLogo,
-                    ResourceAdd = member.ResourceAdd,
-                    Dba = member.Dba,
-                    Dba2 = member.Dba2,
-                    Fka = member.Fka,
-                    Suspended = member.Suspended,
-                    SuspendedDt = member.SuspendedDt,
-                    Fax = member.Fax,
-                    MailAddress = member.MailAddress,
-                    MailCity = member.MailCity,
-                    MailState = member.MailState,
-                    MailZip = member.MailZip,
-                    OverdueAmt = member.OverdueAmt,
-                    OverdueDt = member.OverdueDt,
-                    CalSort = member.CalSort,
-                    Pdfpkg = member.Pdfpkg,
-                    ArchPkg = member.ArchPkg,
-                    AddPkg = member.AddPkg,
-                    Bend = member.Bend,
-                    Credits = member.Credits,
-                    FreelanceEstimator = member.FreelanceEstimator,
-                    HowdUhearAboutUs = member.HowdUhearAboutUs,
-                    TmStamp = member.TmStamp,
-                    BusinessEntityId = lastBusinessEntityId,
-                    SyncStatus = 0,
-                    SyncMemId = member.Id
-                };
+                propMem = TblMemberToMember(member);
+
+                propMem.BusinessEntityId = lastBusinessEntityId;
+                propMem.SyncStatus = 0;
+                propMem.SyncMemId = member.Id;
                 _ = _PCNWContext.Members.Add(propMem);
             }
-            else if (member.SyncStatus == 2)
+            else 
             {
                 propMem = (from mem in _PCNWContext.Members where mem.BusinessEntityId == lastBusinessEntityId select mem).FirstOrDefault()!;
-                propMem.Inactive = member.Inactive;
-                propMem.InsertDate = (DateTime)member.InsertDate!;
-                propMem.LastPayDate = member.LastPayDate;
-                propMem.RenewalDate = member.RenewalDate;
-                propMem.Term = member.Term;
-                propMem.Div = member.Div;
-                propMem.Discipline = member.Discipline;
-                propMem.Note = member.Note;
-                propMem.MinorityStatus = member.MinorityStatus;
-                propMem.MemberType = member.MemberType;
-                propMem.AcceptedTerms = member.AcceptedTerms;
-                propMem.AcceptedTermsDt = member.AcceptedTermsDt;
-                propMem.DailyEmail = member.DailyEmail;
-                propMem.Html = member.Html;
-                propMem.Overdue = member.Overdue;
-                propMem.Cod = member.Cod;
-                propMem.PaperlessBilling = member.PaperlessBilling;
-                propMem.MemberCost = member.MemberCost;
-                propMem.MagCost = member.MagCost;
-                propMem.ArchPkgCost = member.ArchPkgCost;
-                propMem.AddPkgCost = member.AddPkgCost;
-                propMem.ResourceDate = member.ResourceDate;
-                propMem.ResourceCost = member.ResourceCost;
-                propMem.WebAdDate = member.WebAdDate;
-                propMem.WebAdCost = member.WebAdCost;
-                propMem.Phl = member.Phl;
-                propMem.Email = member.Email;
-                propMem.NameField = member.NameField;
-                propMem.FavExp = member.FavExp;
-                propMem.Grace = member.Grace;
-                propMem.ConId = member.ConId;
-                propMem.Gcservices = member.Gcservices;
-                propMem.ResourceStandard = member.ResourceStandard;
-                propMem.ResourceColor = member.ResourceColor;
-                propMem.ResourceLogo = member.ResourceLogo;
-                propMem.ResourceAdd = member.ResourceAdd;
-                propMem.Dba = member.Dba;
-                propMem.Dba2 = member.Dba2;
-                propMem.Fka = member.Fka;
-                propMem.Suspended = member.Suspended;
-                propMem.SuspendedDt = member.SuspendedDt;
-                propMem.Fax = member.Fax;
-                propMem.MailAddress = member.MailAddress;
-                propMem.MailCity = member.MailCity;
-                propMem.MailState = member.MailState;
-                propMem.MailZip = member.MailZip;
-                propMem.OverdueAmt = member.OverdueAmt;
-                propMem.OverdueDt = member.OverdueDt;
-                propMem.CalSort = member.CalSort;
-                propMem.Pdfpkg = member.Pdfpkg;
-                propMem.ArchPkg = member.ArchPkg;
-                propMem.AddPkg = member.AddPkg;
-                propMem.Bend = member.Bend;
-                propMem.Credits = member.Credits;
-                propMem.FreelanceEstimator = member.FreelanceEstimator;
-                propMem.HowdUhearAboutUs = member.HowdUhearAboutUs;
-                propMem.TmStamp = member.TmStamp;
-                _PCNWContext.Entry(propMem).Property(p => p.SyncStatus).IsModified = true;
+                if (propMem == null)
+                {
+                    propMem = TblMemberToMember(member);
+                    propMem.BusinessEntityId = lastBusinessEntityId;
+                    propMem.SyncStatus = 0;
+                    propMem.SyncMemId = member.Id;
+                    _ = _PCNWContext.Members.Add(propMem);
+                }
+                else
+                {
+                    propMem = TblMemberToMember(member);
+                    _PCNWContext.Update(propMem);
+                    //_PCNWContext.Entry(propMem).Property(p => p.SyncStatus).IsModified = true;
+                }
             }
 
             Address propAdd;
@@ -1672,22 +1624,40 @@ public class SyncController
             {
                 propAdd = new Address();
                 propAdd.BusinessEntityId = lastBusinessEntityId;
-                propAdd.Addr1 = member.BillAddress;
-                propAdd.City = member.BillCity;
-                propAdd.State = member.BillState;
-                propAdd.Zip = member.BillZip;
+                propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
+                propAdd.City = member.BillCity ?? member.MailCity ?? "";
+                propAdd.State = member.BillState ?? member.MailState ?? "";
+                propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
                 propAdd.SyncStatus = 0;
                 propAdd.SyncMemId = member.Id;
                 _ = _PCNWContext.Addresses.Add(propAdd);
             }
-            else if (member.SyncStatus == 2)
+            else
             {
                 propAdd = (from add in _PCNWContext.Addresses where add.BusinessEntityId == lastBusinessEntityId select add).FirstOrDefault();
-                propAdd.Addr1 = member.BillAddress;
-                propAdd.City = member.BillCity;
-                propAdd.State = member.BillState;
-                propAdd.Zip = member.BillZip;
-                _PCNWContext.Entry(propAdd).Property(p => p.SyncStatus).IsModified = true;
+                if (propAdd == null)
+                {
+                    propAdd = new Address();
+                    propAdd.BusinessEntityId = lastBusinessEntityId;
+                    propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
+                    propAdd.City = member.BillCity ?? member.MailCity ?? "";
+                    propAdd.State = member.BillState ?? member.MailState ?? "";
+                    propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
+                    propAdd.SyncStatus = 0;
+                    propAdd.SyncMemId = member.Id;
+                    _ = _PCNWContext.Addresses.Add(propAdd);
+                }
+                else
+                {
+                    propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
+                    propAdd.City = member.BillCity ?? member.MailCity ?? "";
+                    propAdd.State = member.BillState ?? member.MailState ?? "";
+                    propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
+
+                    _PCNWContext.Update(propAdd);
+                    _PCNWContext.Entry(propAdd).Property(p => p.SyncStatus).IsModified = true;
+                }
+
             }
             _ = _PCNWContext.SaveChanges();
             _logger.LogInformation($"Member and Address tables updated for Member ID {member.Id} with BusinessEntityID {lastBusinessEntityId}");
@@ -1698,6 +1668,71 @@ public class SyncController
             _logger.LogError(ex, "An error occurred while updating Member and Address tables.");
             throw;
         }
+    }
+
+    public Member TblMemberToMember(TblMember member)
+    {
+        var propMem = new Member
+        {
+            Inactive = member.Inactive,
+            InsertDate = (DateTime)member.InsertDate!,
+            LastPayDate = member.LastPayDate,
+            RenewalDate = member.RenewalDate,
+            Term = member.Term,
+            Div = member.Div,
+            Discipline = member.Discipline,
+            Note = member.Note,
+            MinorityStatus = member.MinorityStatus,
+            MemberType = member.MemberType,
+            AcceptedTerms = member.AcceptedTerms,
+            AcceptedTermsDt = member.AcceptedTermsDt,
+            DailyEmail = member.DailyEmail,
+            Html = member.Html,
+            Overdue = member.Overdue,
+            Cod = member.Cod,
+            PaperlessBilling = member.PaperlessBilling,
+            MemberCost = member.MemberCost,
+            MagCost = member.MagCost,
+            ArchPkgCost = member.ArchPkgCost,
+            AddPkgCost = member.AddPkgCost,
+            ResourceDate = member.ResourceDate,
+            ResourceCost = member.ResourceCost,
+            WebAdDate = member.WebAdDate,
+            WebAdCost = member.WebAdCost,
+            Phl = member.Phl,
+            Email = member.Email,
+            NameField = member.NameField,
+            FavExp = member.FavExp,
+            Grace = member.Grace,
+            ConId = member.ConId,
+            Gcservices = member.Gcservices,
+            ResourceStandard = member.ResourceStandard,
+            ResourceColor = member.ResourceColor,
+            ResourceLogo = member.ResourceLogo,
+            ResourceAdd = member.ResourceAdd,
+            Dba = member.Dba,
+            Dba2 = member.Dba2,
+            Fka = member.Fka,
+            Suspended = member.Suspended,
+            SuspendedDt = member.SuspendedDt,
+            Fax = member.Fax,
+            MailAddress = member.MailAddress,
+            MailCity = member.MailCity,
+            MailState = member.MailState,
+            MailZip = member.MailZip,
+            OverdueAmt = member.OverdueAmt,
+            OverdueDt = member.OverdueDt,
+            CalSort = member.CalSort,
+            Pdfpkg = member.Pdfpkg,
+            ArchPkg = member.ArchPkg,
+            AddPkg = member.AddPkg,
+            Bend = member.Bend,
+            Credits = member.Credits,
+            FreelanceEstimator = member.FreelanceEstimator,
+            HowdUhearAboutUs = member.HowdUhearAboutUs,
+            TmStamp = member.TmStamp
+        };
+        return propMem;
     }
 
     private void UpdateOrAddCounties(TblProject proj, List<TblProjCounty> tblProjCounty, int RecentProjectId, int SuccessProjCountyProcess, int FailProjCountyProcess)

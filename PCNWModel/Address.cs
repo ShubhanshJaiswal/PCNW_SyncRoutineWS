@@ -6,15 +6,15 @@ public partial class Address
 
     public int BusinessEntityId { get; set; }
 
-    public string AddressName { get; set; } = null!;
+    public string AddressName { get; set; } = "";
 
-    public string Addr1 { get; set; } = null!;
+    public string Addr1 { get; set; } = "";
 
-    public string City { get; set; } = null!;
+    public string City { get; set; } = "";
 
-    public string State { get; set; } = null!;
+    public string State { get; set; } = "";
 
-    public string Zip { get; set; } = null!;
+    public string Zip { get; set; } = "";
 
     public int SyncStatus { get; set; }
 
@@ -24,5 +24,5 @@ public partial class Address
 
     public int? SyncConId { get; set; }
 
-    public virtual BusinessEntity BusinessEntity { get; set; } = null!;
+    public virtual BusinessEntity BusinessEntity { get; set; } 
 }

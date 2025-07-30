@@ -146,7 +146,10 @@ public class SyncController
                 bool isMismatch = !ocpcCountyIds.SequenceEqual(pcnwCountyIds);
 
                 if (isMismatch)
+                {
+                    _logger.LogInformation("Found ProjID: {0} .", projId);
                     mismatchedProjectIds.Add(projId);
+                }
             }
 
             // Step 3: Fetch the mismatched project records and counties from OCPC

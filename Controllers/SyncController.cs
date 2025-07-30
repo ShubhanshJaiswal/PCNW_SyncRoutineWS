@@ -53,25 +53,25 @@ public class SyncController
 
             //Member Sync code
 
-            var businessEntityEmails = _PCNWContext.BusinessEntities
-                                .Select(be => be.BusinessEntityEmail)
-                                .ToHashSet();
-            var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet(); ;
+            //var businessEntityEmails = _PCNWContext.BusinessEntities
+            //                    .Select(be => be.BusinessEntityEmail)
+            //                    .ToHashSet();
+            //var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet(); ;
 
-            var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-                                 where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
-                                 select mem).OrderBy(m => m.Id)
-                                 .AsNoTracking()
-                                 .ToList();
+            //var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+            //                     where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
+            //                     select mem).OrderBy(m => m.Id)
+            //                     .AsNoTracking()
+            //                     .ToList();
 
-            var memberids = tblOCPCMember.Select(m => m.Id).ToList();
+            //var memberids = tblOCPCMember.Select(m => m.Id).ToList();
 
-            var tblOCPCContact = _OCOCContext.TblContacts
-                .AsNoTracking()
-                .ToList();
+            //var tblOCPCContact = _OCOCContext.TblContacts
+            //    .AsNoTracking()
+            //    .ToList();
 
-            tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
-            ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+            //tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
+            //ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
             // project sync code
 
@@ -118,10 +118,48 @@ public class SyncController
 
             //UpdateDirectory(ProjNumbers);
 
-            //var prj = _OCOCContext.TblProjects.OrderByDescending(m=>m.ProjId).ToList();
-            //var countied = _OCOCContext.TblProjCounties.ToList();
+            var syncedProjIds = _PCNWContext.Projects
+    .Where(p => p.SyncProId != null && p.ArrivalDt>DateTime.Now.AddMonths(-30)).OrderByDescending(m=>m.ProjId)
+    .Select(p => p.SyncProId.Value)
+    .ToList();
 
-            //UpdateProjectFunctionality(prj, countied);
+            // Step 2: Identify mismatched counties between OCPC and PCNW
+            var mismatchedProjectIds = new List<long>();
+
+            foreach (var projId in syncedProjIds)
+            {
+                var ocpcCountyIds = _OCOCContext.TblProjCounties
+                    .Where(c => c.ProjId == projId)
+                    .Select(c => c.CountyId)
+                    .OrderBy(c => c)
+                    .ToList();
+
+                var pcnwCountyIds = _PCNWContext.ProjCounties
+                    .Where(c => c.ProjId == _PCNWContext.Projects
+                                                    .Where(p => p.SyncProId == projId)
+                                                    .Select(p => p.ProjId)
+                                                    .FirstOrDefault())
+                    .Select(c => c.CountyId)
+                    .OrderBy(c => c)
+                    .ToList();
+
+                bool isMismatch = !ocpcCountyIds.SequenceEqual(pcnwCountyIds);
+
+                if (isMismatch)
+                    mismatchedProjectIds.Add(projId);
+            }
+
+            // Step 3: Fetch the mismatched project records and counties from OCPC
+            var mismatchedProjects = _OCOCContext.TblProjects
+                .Where(p => mismatchedProjectIds.Contains(p.ProjId))
+                .ToList();
+
+            var mismatchedProjCounties = _OCOCContext.TblProjCounties
+                .Where(c => mismatchedProjectIds.Contains(c.ProjId))
+                .ToList();
+            _logger.LogInformation("Found {0} mismatched projects.", mismatchedProjectIds.Count);
+            // Step 4: Call your existing function
+            UpdateProjectFunctionality(mismatchedProjects, mismatchedProjCounties);
 
             // Query Arch Owners
 

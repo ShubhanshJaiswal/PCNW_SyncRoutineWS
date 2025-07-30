@@ -11,26 +11,34 @@ namespace SyncRoutineWS
         {
             _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
 
+            int a = 1; // Set to 1 for immediate run, 0 for only midnight runs
+            bool isFirstRun = true;
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 var now = DateTime.Now;
-                var nextRunTime = DateTime.Today;
+                TimeSpan delay;
 
-                if (now > nextRunTime)
-                    nextRunTime = nextRunTime.AddDays(1);
+                if (isFirstRun && a == 1)
+                {
+                    // Run immediately on first run if a == 1
+                    delay = TimeSpan.Zero;
+                }
+                else
+                {
+                    // Wait until next midnight
+                    var nextRunTime = DateTime.Today.AddDays(1);
+                    delay = nextRunTime - now;
+                }
 
-                // Run immediately
-                int a = 1; // Change this to 1 for immediate execution, and 0 for production timing
-                var delay = a > 0 ? TimeSpan.Zero : nextRunTime - now;
+                _logger.LogInformation("Next run scheduled after delay: {delay}", delay);
 
-                _logger.LogInformation("Next run scheduled at: {time}", nextRunTime);
-
-                // Wait for the next run time or proceed immediately if `delay` is zero
+                // Wait for the calculated delay
                 await Task.Delay(delay, stoppingToken);
 
                 try
                 {
-                    _logger.LogInformation("Starting upload process at: {time}", DateTime.Now);
+                    _logger.LogInformation("Starting sync process at: {time}", DateTime.Now);
 
                     using (var scope = _serviceProvider.CreateScope())
                     {
@@ -38,12 +46,14 @@ namespace SyncRoutineWS
                         await uploadController.SyncDatabases(); // Your syncing process
                     }
 
-                    _logger.LogInformation("Sync process completed successfully at: {time}", DateTime.Now);
+                    _logger.LogInformation("Sync process completed at: {time}", DateTime.Now);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "An error occurred during the upload process.");
+                    _logger.LogError(ex, "An error occurred during the sync process.");
                 }
+
+                isFirstRun = false; // All subsequent runs follow midnight schedule
             }
         }
     }

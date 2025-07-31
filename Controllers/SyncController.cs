@@ -75,48 +75,48 @@ public class SyncController
 
             // project sync code
 
-            //var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
-            //    .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
+            var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
+                .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
 
-            //var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
+            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
 
-            //var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
-            //                    && proj.Publish.Value).ToList();
+            var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
+                                && proj.Publish.Value).ToList();
 
-            ////var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
-
-
-            //var tblProjectIds = tblProjects.Select(m => m.ProjId);
-            //var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
-            //var tblProjCounty = tblProjects.Count != 0
-            //    ? [.. allcountiesrecords
-            //            .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && tblProjectIds.Contains(projCounty.ProjId))]
-            //    : new List<TblProjCounty>();
-
-            //ProcessProjectFunctionality(tblProjects, tblProjCounty);
-
-            //var updateProjectsIds = _OCOCContext.TblProjFieldChngs
-            //    .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
-            //    .AsNoTracking()
-            //    .Select(m => m.ProjId).ToHashSet();
-            //var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
-
-            //var tblupdateProjCounty = updateProjects.Count != 0
-            //    ? [.. _OCOCContext.TblProjCounties
-            //            .Where(projCounty =>(projCounty.SyncStatus == 1 || projCounty.SyncStatus == 2) && updateProjectsIds.Contains(projCounty.ProjId))
-            //            .AsNoTracking()]
-            //    : new List<TblProjCounty>();
-            // UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+            //var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
 
 
-            ////creating the directory for projnumbers(past 2 months)
-            //var pastMonthDate = DateTime.Now.AddMonths(-1);
-            //int pastMonth = pastMonthDate.Month;
-            //int pastYear = pastMonthDate.Year;
+            var tblProjectIds = tblProjects.Select(m => m.ProjId);
+            var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
+            var tblProjCounty = tblProjects.Count != 0
+                ? [.. allcountiesrecords
+                        .Where(projCounty => tblProjectIds.Contains(projCounty.ProjId))]
+                : new List<TblProjCounty>();
 
-            //var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m=>m.ProjNumber);
+            ProcessProjectFunctionality(tblProjects, tblProjCounty);
 
-            //UpdateDirectory(ProjNumbers);
+            var updateProjectsIds = _OCOCContext.TblProjFieldChngs
+                .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
+                .AsNoTracking()
+                .Select(m => m.ProjId).ToHashSet();
+            var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
+
+            var tblupdateProjCounty = updateProjects.Count != 0
+                ? [.. _OCOCContext.TblProjCounties
+                        .Where(projCounty => updateProjectsIds.Contains(projCounty.ProjId))
+                        .AsNoTracking()]
+                : new List<TblProjCounty>();
+            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
+
+
+            //creating the directory for projnumbers(past 2 months)
+            var pastMonthDate = DateTime.Now.AddMonths(-1);
+            int pastMonth = pastMonthDate.Month;
+            int pastYear = pastMonthDate.Year;
+
+            var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m => m.ProjNumber);
+
+            UpdateDirectory(ProjNumbers);
 
             var syncedProjIds = _PCNWContext.Projects
     .Where(p => p.SyncProId != null && p.ArrivalDt>DateTime.Now.AddMonths(-30)).OrderByDescending(m=>m.ProjId)
@@ -149,6 +149,7 @@ public class SyncController
                 {
                     _logger.LogInformation("Found ProjID: {0} .", projId);
                     mismatchedProjectIds.Add(projId);
+
                 }
             }
 

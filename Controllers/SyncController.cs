@@ -119,7 +119,7 @@ public class SyncController
             UpdateDirectory(ProjNumbers);
 
             var syncedProjIds = _PCNWContext.Projects
-    .Where(p => p.SyncProId != null && p.ArrivalDt>DateTime.Now.AddMonths(-30)).OrderByDescending(m=>m.ProjId)
+    .Where(p => p.SyncProId != null && p.ArrivalDt > DateTime.Now.AddMonths(-30)).OrderByDescending(m => m.ProjId)
     .Select(p => p.SyncProId.Value)
     .ToList();
 
@@ -1549,7 +1549,7 @@ public class SyncController
                                     break;
 
                                 default: // Update Existing Contact
-                                    propCont = _PCNWContext.Contacts.FirstOrDefault(c => c.BusinessEntityId == lastBusinessEntityId && c.SyncConId==contact.ConId);
+                                    propCont = _PCNWContext.Contacts.FirstOrDefault(c => c.BusinessEntityId == lastBusinessEntityId && c.SyncConId == contact.ConId);
                                     if (propCont != null)
                                     {
                                         propCont.ContactName = contact.Contact;
@@ -1646,7 +1646,7 @@ public class SyncController
                 propMem.SyncMemId = member.Id;
                 _ = _PCNWContext.Members.Add(propMem);
             }
-            else 
+            else
             {
                 propMem = (from mem in _PCNWContext.Members where mem.BusinessEntityId == lastBusinessEntityId select mem).FirstOrDefault()!;
                 if (propMem == null)
@@ -1793,39 +1793,41 @@ public class SyncController
             var existingProjCounties = _PCNWContext.ProjCounties
                 .Where(pc => pc.ProjId == RecentProjectId)
                 .ToList();
-
-            //_PCNWContext.ProjCounties.RemoveRange(existingProjCounties);
-            _PCNWContext.ProjCounties.Where(pc => pc.ProjId == RecentProjectId).ExecuteDelete();
-
-            //_logger.LogInformation($"Deleted {existingProjCounties.Count} existing ProjCounty records for Project ID {RecentProjectId}.");
-
-
-            foreach (var pc in projCountiesToSync)
+            if (projCountiesToSync.Count > 0)
             {
-                try
+                //_PCNWContext.ProjCounties.RemoveRange(existingProjCounties);
+                _PCNWContext.ProjCounties.Where(pc => pc.ProjId == RecentProjectId).ExecuteDelete();
+
+                //_logger.LogInformation($"Deleted {existingProjCounties.Count} existing ProjCounty records for Project ID {RecentProjectId}.");
+
+
+                foreach (var pc in projCountiesToSync)
                 {
-                    var newProjCounty = new ProjCounty
+                    try
                     {
-                        ProjId = RecentProjectId,
-                        CountyId = pc.CountyId,
-                        SyncStatus = 0,
-                        SyncProCouId = pc.ProjCountyId
-                    };
+                        var newProjCounty = new ProjCounty
+                        {
+                            ProjId = RecentProjectId,
+                            CountyId = pc.CountyId,
+                            SyncStatus = 0,
+                            SyncProCouId = pc.ProjCountyId
+                        };
 
-                    _PCNWContext.ProjCounties.Add(newProjCounty);
-                    _logger.LogInformation($"Added new ProjCounty for County ID {pc.CountyId}.");
-                    SuccessProjCountyProcess++;
-                    var abc = _OCOCContext.TblProjCounties.Where(m => m.ProjId == proj.ProjId)
-                        .ExecuteUpdate(s => s.SetProperty(u => u.SyncStatus, u => 3));
+                        _PCNWContext.ProjCounties.Add(newProjCounty);
+                        _logger.LogInformation($"Added new ProjCounty for County ID {pc.CountyId}.");
+                        SuccessProjCountyProcess++;
+                        var abc = _OCOCContext.TblProjCounties.Where(m => m.ProjId == proj.ProjId)
+                            .ExecuteUpdate(s => s.SetProperty(u => u.SyncStatus, u => 3));
+                    }
+                    catch (Exception innerEx)
+                    {
+                        _logger.LogError($"Error processing TblProjCounty ID {pc.ProjCountyId}: {innerEx.Message}");
+                        FailProjCountyProcess++;
+                    }
                 }
-                catch (Exception innerEx)
-                {
-                    _logger.LogError($"Error processing TblProjCounty ID {pc.ProjCountyId}: {innerEx.Message}");
-                    FailProjCountyProcess++;
-                }
+
+                _PCNWContext.SaveChanges();
             }
-
-            _PCNWContext.SaveChanges();
             _logger.LogInformation($"Completed processing TblProjCounty records for Project ID {proj.ProjId}.");
         }
         catch (Exception ex)
@@ -1892,7 +1894,14 @@ public class SyncController
             .Where(e => e.ProjId == recentPCNWProjectId)
             .ToList();
 
+        if ((!string.IsNullOrWhiteSpace(proj.EstCost) && !string.Equals(proj.EstCost, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+       (!string.IsNullOrWhiteSpace(proj.EstCost2) && !string.Equals(proj.EstCost2, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+        (!string.IsNullOrWhiteSpace(proj.EstCost3) && !string.Equals(proj.EstCost3, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+        (!string.IsNullOrWhiteSpace(proj.EstCost4) && !string.Equals(proj.EstCost4, "N/A", StringComparison.OrdinalIgnoreCase)))
+        {
+            _PCNWContext.EstCostDetails.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
 
+        }
         void ProcessEstCost(string estCost)
         {
             if (!string.IsNullOrWhiteSpace(estCost) && !string.Equals(estCost, "N/A", StringComparison.OrdinalIgnoreCase))
@@ -1937,7 +1946,6 @@ public class SyncController
 
 
 
-                _PCNWContext.EstCostDetails.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
 
 
                 // Add new record

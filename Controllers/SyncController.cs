@@ -1164,7 +1164,7 @@ public class SyncController
             }
             catch (Exception exProject)
             {
-                _logger.LogError($"Exception occurred for Project ID {proj.ProjId}.", exProject);
+                _logger.LogError(exProject, "Exception occurred for Project ID {ProjectId}", proj.ProjId);
                 FailProjectProcess++;
                 continue;
             }
@@ -1397,7 +1397,7 @@ public class SyncController
             }
             catch (Exception exProject)
             {
-                _logger.LogError($"Exception occurred for Project ID {proj.ProjId}.", exProject);
+                _logger.LogError(exProject, "Exception occurred for Project ID {ProjectId}", proj.ProjId);
                 FailProjectProcess++;
                 continue;
             }
@@ -1835,139 +1835,171 @@ public class SyncController
             _logger.LogError($"Error processing TblProjCounty for Project ID {proj.ProjId}: {ex.Message}");
         }
     }
-
     private void UpdateOrAddPreBidInfo(TblProject proj, int recentPCNWProjectId)
     {
-        // Get all existing PreBidInfos for the project
-        var existingPreBids = _PCNWContext.PreBidInfos
-            .Where(p => p.ProjId == recentPCNWProjectId)
-            .ToList();
-
-        if (proj.PreBidDt != null || proj.PreBidDt2 != null)
+        try
         {
-            _PCNWContext.PreBidInfos.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
-        }
+            // Log entry
+            _logger.LogInformation("Starting UpdateOrAddPreBidInfo for ProjectId: {ProjectId}", recentPCNWProjectId);
 
-        // Handle PreBidDt
-        if (proj.PreBidDt != null)
-        {
-            var preBidDate = proj.PreBidDt.Value.Date;
+            // Get all existing PreBidInfos for the project
+            var existingPreBids = _PCNWContext.PreBidInfos
+                .Where(p => p.ProjId == recentPCNWProjectId)
+                .ToList();
 
-            var newPreBidInfo = new PreBidInfo
+            if (proj.PreBidDt != null || proj.PreBidDt2 != null)
             {
-                PreBidDate = preBidDate,
-                PreBidTime = proj.PreBidDt.Value.ToString("HH:mm"),
-                Location = proj.PreBidLoc,
-                PreBidAnd = proj.PrebidAnd ?? false,
-                ProjId = recentPCNWProjectId,
-                UndecidedPreBid = false,
-                Pst = "PT",
-                SyncStatus = 0
-            };
-            _PCNWContext.PreBidInfos.Add(newPreBidInfo);
-        }
-
-        // Handle PreBidDt2
-        if (proj.PreBidDt2 != null)
-        {
-            var preBidDate = proj.PreBidDt2.Value.Date;
-
-            var newPreBidInfo = new PreBidInfo
-            {
-                PreBidDate = preBidDate,
-                PreBidTime = proj.PreBidDt2.Value.ToString("HH:mm"),
-                Location = proj.PreBidLoc2,
-                PreBidAnd = proj.PrebidAnd ?? false,
-                ProjId = recentPCNWProjectId,
-                UndecidedPreBid = false,
-                Pst = "PT",
-                SyncStatus = 0
-            };
-            _PCNWContext.PreBidInfos.Add(newPreBidInfo);
-        }
-
-    }
-
-    private void UpdateOrAddEstCostDetail(TblProject proj, int recentPCNWProjectId)
-    {
-        var existingEstCosts = _PCNWContext.EstCostDetails
-            .Where(e => e.ProjId == recentPCNWProjectId)
-            .ToList();
-
-        if ((!string.IsNullOrWhiteSpace(proj.EstCost) && !string.Equals(proj.EstCost, "N/A", StringComparison.OrdinalIgnoreCase)) ||
-       (!string.IsNullOrWhiteSpace(proj.EstCost2) && !string.Equals(proj.EstCost2, "N/A", StringComparison.OrdinalIgnoreCase)) ||
-        (!string.IsNullOrWhiteSpace(proj.EstCost3) && !string.Equals(proj.EstCost3, "N/A", StringComparison.OrdinalIgnoreCase)) ||
-        (!string.IsNullOrWhiteSpace(proj.EstCost4) && !string.Equals(proj.EstCost4, "N/A", StringComparison.OrdinalIgnoreCase)))
-        {
-            _PCNWContext.EstCostDetails.Where(pc => pc.ProjId == recentPCNWProjectId).ExecuteDelete();
-
-        }
-        void ProcessEstCost(string estCost)
-        {
-            if (!string.IsNullOrWhiteSpace(estCost) && !string.Equals(estCost, "N/A", StringComparison.OrdinalIgnoreCase))
-            {
-                string description = null;
-                var rangeSign = "0";
-                var costTo = string.Empty;
-                var costFrom = string.Empty;
-
-                var descriptionMatch = Regex.Match(estCost, @"\(([^)]+)\)");
-                if (descriptionMatch.Success)
-                {
-                    description = descriptionMatch.Groups[1].Value.Trim();
-                }
-
-                var cleanedEstCost = Regex.Replace(estCost, @"\(([^)]+)\)", "").Trim();
-
-                if (cleanedEstCost.Contains('<'))
-                {
-                    rangeSign = "1";
-                    costFrom = cleanedEstCost.Replace("<", "").Trim().Replace("$", "");
-                }
-                else if (cleanedEstCost.Contains('>'))
-                {
-                    rangeSign = "2";
-                    costFrom = cleanedEstCost.Replace(">", "").Trim().Replace("$", "");
-                }
-                else if (cleanedEstCost.Contains('-'))
-                {
-                    rangeSign = "0";
-                    var costs = cleanedEstCost.Split('-');
-                    costFrom = costs[0].Trim().Replace("$", "");
-                    costTo = costs[1].Trim().Replace("$", "");
-                }
-                else
-                {
-                    costFrom = cleanedEstCost.Trim().Replace("$", "");
-                }
-
-                //costTo = Regex.Replace(costTo, @"[^\d]", "");
-                //costFrom = Regex.Replace(costFrom, @"[^\d]", "");
-
-
-
-
-
-                // Add new record
-                var newEstCostDetail = new EstCostDetail
-                {
-                    EstCostTo = costTo,
-                    EstCostFrom = costFrom,
-                    Description = description,
-                    ProjId = recentPCNWProjectId,
-                    Removed = false,
-                    RangeSign = rangeSign,
-                    SyncStatus = 0
-                };
-                _PCNWContext.EstCostDetails.Add(newEstCostDetail);
+                _logger.LogInformation("Deleting existing PreBidInfos for ProjectId: {ProjectId}", recentPCNWProjectId);
+                _PCNWContext.PreBidInfos
+                    .Where(pc => pc.ProjId == recentPCNWProjectId)
+                    .ExecuteDelete();
             }
 
+            // Handle PreBidDt
+            if (proj.PreBidDt != null)
+            {
+                var preBidDate = proj.PreBidDt.Value.Date;
+
+                var newPreBidInfo = new PreBidInfo
+                {
+                    PreBidDate = preBidDate,
+                    PreBidTime = proj.PreBidDt.Value.ToString("HH:mm"),
+                    Location = proj.PreBidLoc,
+                    PreBidAnd = proj.PrebidAnd ?? false,
+                    ProjId = recentPCNWProjectId,
+                    UndecidedPreBid = false,
+                    Pst = "PT",
+                    SyncStatus = 0
+                };
+
+                _logger.LogInformation("Adding new PreBidInfo (PreBidDt) for ProjectId: {ProjectId}", recentPCNWProjectId);
+                _PCNWContext.PreBidInfos.Add(newPreBidInfo);
+            }
+
+            // Handle PreBidDt2
+            if (proj.PreBidDt2 != null)
+            {
+                var preBidDate = proj.PreBidDt2.Value.Date;
+
+                var newPreBidInfo = new PreBidInfo
+                {
+                    PreBidDate = preBidDate,
+                    PreBidTime = proj.PreBidDt2.Value.ToString("HH:mm"),
+                    Location = proj.PreBidLoc2,
+                    PreBidAnd = proj.PrebidAnd ?? false,
+                    ProjId = recentPCNWProjectId,
+                    UndecidedPreBid = false,
+                    Pst = "PT",
+                    SyncStatus = 0
+                };
+
+                _logger.LogInformation("Adding new PreBidInfo (PreBidDt2) for ProjectId: {ProjectId}", recentPCNWProjectId);
+                _PCNWContext.PreBidInfos.Add(newPreBidInfo);
+            }
+
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Successfully completed UpdateOrAddPreBidInfo for ProjectId: {ProjectId}", recentPCNWProjectId);
         }
-
-        ProcessEstCost(proj.EstCost);
-        ProcessEstCost(proj.EstCost2);
-        ProcessEstCost(proj.EstCost3);
-        ProcessEstCost(proj.EstCost4);
-
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while updating or adding PreBidInfo for ProjectId: {ProjectId}", recentPCNWProjectId);
+            // Optional: rethrow or handle as per application flow
+            throw;
+        }
     }
+    private void UpdateOrAddEstCostDetail(TblProject proj, int recentPCNWProjectId)
+    {
+        try
+        {
+            _logger.LogInformation("Starting UpdateOrAddEstCostDetail for ProjectId: {ProjectId}", recentPCNWProjectId);
+
+            var existingEstCosts = _PCNWContext.EstCostDetails
+                .Where(e => e.ProjId == recentPCNWProjectId)
+                .ToList();
+
+            bool hasValidEstCost = (!string.IsNullOrWhiteSpace(proj.EstCost) && !string.Equals(proj.EstCost, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+                                   (!string.IsNullOrWhiteSpace(proj.EstCost2) && !string.Equals(proj.EstCost2, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+                                   (!string.IsNullOrWhiteSpace(proj.EstCost3) && !string.Equals(proj.EstCost3, "N/A", StringComparison.OrdinalIgnoreCase)) ||
+                                   (!string.IsNullOrWhiteSpace(proj.EstCost4) && !string.Equals(proj.EstCost4, "N/A", StringComparison.OrdinalIgnoreCase));
+
+            if (hasValidEstCost)
+            {
+                _logger.LogInformation("Deleting existing EstCostDetails for ProjectId: {ProjectId}", recentPCNWProjectId);
+                _PCNWContext.EstCostDetails
+                    .Where(pc => pc.ProjId == recentPCNWProjectId)
+                    .ExecuteDelete();
+            }
+
+            void ProcessEstCost(string estCost, string fieldName)
+            {
+                if (!string.IsNullOrWhiteSpace(estCost) && !string.Equals(estCost, "N/A", StringComparison.OrdinalIgnoreCase))
+                {
+                    string description = null;
+                    string rangeSign = "0";
+                    string costTo = string.Empty;
+                    string costFrom = string.Empty;
+
+                    var descriptionMatch = Regex.Match(estCost, @"\(([^)]+)\)");
+                    if (descriptionMatch.Success)
+                    {
+                        description = descriptionMatch.Groups[1].Value.Trim();
+                    }
+
+                    var cleanedEstCost = Regex.Replace(estCost, @"\(([^)]+)\)", "").Trim();
+
+                    if (cleanedEstCost.Contains('<'))
+                    {
+                        rangeSign = "1";
+                        costFrom = cleanedEstCost.Replace("<", "").Trim().Replace("$", "");
+                    }
+                    else if (cleanedEstCost.Contains('>'))
+                    {
+                        rangeSign = "2";
+                        costFrom = cleanedEstCost.Replace(">", "").Trim().Replace("$", "");
+                    }
+                    else if (cleanedEstCost.Contains('-'))
+                    {
+                        rangeSign = "0";
+                        var costs = cleanedEstCost.Split('-');
+                        costFrom = costs[0].Trim().Replace("$", "");
+                        costTo = costs[1].Trim().Replace("$", "");
+                    }
+                    else
+                    {
+                        costFrom = cleanedEstCost.Trim().Replace("$", "");
+                    }
+
+                    _logger.LogInformation("Parsed {FieldName} for ProjectId {ProjectId}: From=${CostFrom}, To=${CostTo}, Desc={Description}, RangeSign={RangeSign}",
+                        fieldName, recentPCNWProjectId, costFrom, costTo, description, rangeSign);
+
+                    var newEstCostDetail = new EstCostDetail
+                    {
+                        EstCostTo = costTo,
+                        EstCostFrom = costFrom,
+                        Description = description,
+                        ProjId = recentPCNWProjectId,
+                        Removed = false,
+                        RangeSign = rangeSign,
+                        SyncStatus = 0
+                    };
+
+                    _PCNWContext.EstCostDetails.Add(newEstCostDetail);
+                }
+            }
+
+            ProcessEstCost(proj.EstCost, nameof(proj.EstCost));
+            ProcessEstCost(proj.EstCost2, nameof(proj.EstCost2));
+            ProcessEstCost(proj.EstCost3, nameof(proj.EstCost3));
+            ProcessEstCost(proj.EstCost4, nameof(proj.EstCost4));
+
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Successfully completed UpdateOrAddEstCostDetail for ProjectId: {ProjectId}", recentPCNWProjectId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred in UpdateOrAddEstCostDetail for ProjectId: {ProjectId}", recentPCNWProjectId);
+            throw;
+        }
+    }
+
 }

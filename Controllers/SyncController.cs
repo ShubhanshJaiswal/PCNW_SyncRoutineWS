@@ -1113,6 +1113,9 @@ public class SyncController
 
                         if (propProject.PlanNo == 400) propProject.FutureWork = true;
 
+
+                        _logger.LogInformation($"{proj.ProjId} Publish : {proj.Publish}");
+
                         _PCNWContext.Entry(propProject).State = EntityState.Modified;
                         var result = _PCNWContext.SaveChanges();
                         RecentProjectId = (int)propProject.ProjId;
@@ -1345,6 +1348,7 @@ public class SyncController
 
                     // Create Project directory
 
+                    _logger.LogInformation($"{proj.ProjId} Publish : {proj.Publish}");
                     _logger.LogInformation($"Inserting new Project ID {proj.ProjId} into PCNWContext.");
                     _PCNWContext.Projects.Add(propProject);
 
@@ -1390,9 +1394,9 @@ public class SyncController
                     continue;
                 }
 
-                proj.SyncStatus = 3;
-                _OCOCContext.Entry(proj).Property(p => p.SyncStatus).IsModified = true;
-                _OCOCContext.SaveChanges();
+                _OCOCContext.TblProjects
+                    .Where(p => p.ProjId == proj.ProjId)
+                    .ExecuteUpdate(setters => setters.SetProperty(p => p.SyncStatus, 3));
                 _logger.LogInformation($"Sync status updated to 3 for Project ID {proj.ProjId}.");
             }
             catch (Exception exProject)

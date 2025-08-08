@@ -1031,7 +1031,7 @@ public class SyncController
                         propProject.FutureWork = proj.FutureWork;
                         propProject.Hold = proj.Hold;
                         propProject.ImportDt = proj.ImportDt;
-                        propProject.InternalNote = proj.InternalNote;
+                        //propProject.InternalNote = proj.InternalNote;
                         propProject.InternetDownload = proj.InternetDownload;
                         propProject.IssuingOffice = proj.IssuingOffice;
                         propProject.LastBidDt = proj.LastBidDt;
@@ -1067,7 +1067,8 @@ public class SyncController
                         propProject.PrebidOr = proj.PrebidOr;
                         propProject.PrevailingWage = proj.PrevailingWage;
                         propProject.ProjIdMain = proj.ProjIdMain;
-                        propProject.ProjNote = proj.ProjNote;
+                        //propProject.ProjNote = proj.ProjNote;
+                        propProject.InternalNote = proj.ProjNote;
                         propProject.ProjTimeStamp = proj.ProjTimeStamp;
                         propProject.ProjTypeId = proj.ProjTypeId;
                         propProject.Publish = proj.Publish;
@@ -1260,7 +1261,7 @@ public class SyncController
                         Hold = proj.Hold,
                         ImportDt = proj.ImportDt,
                         //propProject.IndexPDFFiles = proj.IndexPDFFiles;
-                        InternalNote = proj.InternalNote,
+                        //InternalNote = proj.InternalNote,
                         InternetDownload = proj.InternetDownload,
                         IssuingOffice = proj.IssuingOffice,
                         LastBidDt = proj.LastBidDt,
@@ -1296,7 +1297,8 @@ public class SyncController
                         PrebidOr = proj.PrebidOr,
                         PrevailingWage = proj.PrevailingWage,
                         ProjIdMain = proj.ProjIdMain,
-                        ProjNote = proj.ProjNote,
+                        //ProjNote = proj.ProjNote,
+                        InternalNote = proj.ProjNote,
                         ProjTimeStamp = proj.ProjTimeStamp,
                         ProjTypeId = proj.ProjTypeId,
                         Publish = proj.Publish,

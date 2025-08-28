@@ -75,13 +75,21 @@ public class SyncController
 
             // project sync code
 
-            var syncedProjectsIds = _PCNWContext.Projects.Where(m => m.SyncProId != null)
-                .AsNoTracking().Select(m => m.SyncProId).ToHashSet();
+            var syncedProjectsIds = _PCNWContext.Projects
+                .Where(p => p.SyncProId != null)
+                .AsNoTracking()
+                .Select(p => p.SyncProId!.Value)  
+                .ToHashSet();
 
             var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
 
-            var tblProjects = allprojectrecords.Where(proj => (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) && proj.Publish.HasValue
-                                && proj.Publish.Value).ToList();
+            var tblProjects = allprojectrecords
+                .Where(proj =>
+                    (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) &&
+                    proj.Publish == true)
+                .ToList();
+
+
 
             //var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
 

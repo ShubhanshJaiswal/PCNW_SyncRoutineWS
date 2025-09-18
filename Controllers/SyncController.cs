@@ -2230,10 +2230,10 @@ public class SyncController
         return name;
     }
 
-    private static string BuildLiveFolderName(long planNumber, long projId, string? title)
+    private static string BuildLiveFolderName(long planNumber, long SyncProId, string? title)
     {
         var t = SanitizeForPath(TruncateSafe(title, 15));
-        return $"({planNumber}) ({projId}) {t}";
+        return $"({planNumber}) ({SyncProId}) {t}";
     }
     private static readonly Regex _liveDirRegex =
     new Regex(@"\((\d+)\)\s*\((\d+)\)\s*(.*)$", RegexOptions.Compiled);
@@ -2348,10 +2348,10 @@ public class SyncController
                 .AsNoTracking()
                 .Select(p => new
                 {
-                    p.ProjId,
                     p.ProjNumber,
                     p.PlanNo,     
-                    p.Title    
+                    p.Title,  
+                    p.SyncProId
                 })
                 .ToListAsync(ct);
 
@@ -2386,14 +2386,14 @@ public class SyncController
                     {
                         // Prefer direct index lookup by ProjId
                         string? liveDir = null;
-                        if (liveIndex.TryGetValue(proj.ProjId, out var indexed))
+                        if (liveIndex.TryGetValue(proj.SyncProId.Value, out var indexed))
                         {
                             liveDir = indexed;
                         }
                         else
                         {
                             // Build expected name, then check (handles title/spacing variants when exact exists)
-                            var expected = BuildLiveFolderName(proj.PlanNo.Value, proj.ProjId, proj.Title);
+                            var expected = BuildLiveFolderName(proj.PlanNo.Value, proj.SyncProId.Value, proj.Title);
                             var candidate = Path.Combine(_liveProjectsRoot, expected);
                             if (Directory.Exists(candidate))
                                 liveDir = candidate;
@@ -2402,7 +2402,7 @@ public class SyncController
                         if (string.IsNullOrEmpty(liveDir) || !Directory.Exists(liveDir))
                         {
                             Interlocked.Increment(ref missing);
-                            _logger.LogDebug("Live folder missing for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.ProjId, proj.ProjNumber);
+                            _logger.LogDebug("Live folder missing for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.SyncProId.Value, proj.ProjNumber);
                             return;
                         }
 
@@ -2420,7 +2420,7 @@ public class SyncController
                     catch (Exception ex)
                     {
                         Interlocked.Increment(ref errors);
-                        _logger.LogWarning(ex, "File sync failed for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.ProjId, proj.ProjNumber);
+                        _logger.LogWarning(ex, "File sync failed for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.SyncProId, proj.ProjNumber);
                     }
                 });
             }, ct);
@@ -2480,7 +2480,7 @@ public class SyncController
                 return;
 
             // You likely have these on your Project model; if the names differ, just map:
-            var liveDir = TryResolveLiveDir(project.SyncProId ?? project.ProjId,   // prefer OCPC's ID if you keep it
+            var liveDir = TryResolveLiveDir(project.SyncProId.Value,   // prefer OCPC's ID if you keep it
                                             project.PlanNo.Value,
                                             project.Title);
             if (!string.IsNullOrEmpty(liveDir) && Directory.Exists(liveDir))

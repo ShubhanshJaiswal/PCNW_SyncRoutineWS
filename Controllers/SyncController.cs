@@ -2280,50 +2280,7 @@ public class SyncController
         var month = projNumber.Substring(2, 2);
         return Path.Combine(_fileUploadPath, year, month, projNumber);
     }
-    private static void CopyDirectoryIncremental(string sourceDir, string destDir, CancellationToken ct)
-    {
-        Directory.CreateDirectory(destDir);
-
-        // Files
-        foreach (var file in Directory.EnumerateFiles(sourceDir))
-        {
-            ct.ThrowIfCancellationRequested();
-            var fileName = Path.GetFileName(file);
-            var destPath = Path.Combine(destDir, fileName);
-
-            try
-            {
-                var srcInfo = new FileInfo(file);
-                var dstInfo = new FileInfo(destPath);
-
-                bool shouldCopy =
-                    !dstInfo.Exists ||
-                    dstInfo.Length != srcInfo.Length ||
-                    dstInfo.LastWriteTimeUtc < srcInfo.LastWriteTimeUtc;
-
-                if (shouldCopy)
-                {
-                    Directory.CreateDirectory(destDir);
-                    File.Copy(file, destPath, overwrite: true);
-                    File.SetLastWriteTimeUtc(destPath, srcInfo.LastWriteTimeUtc);
-                }
-            }
-            catch
-            {
-                // swallow per-file; you log at caller level
-                throw;
-            }
-        }
-
-        // Subdirectories (recurse)
-        foreach (var sub in Directory.EnumerateDirectories(sourceDir))
-        {
-            ct.ThrowIfCancellationRequested();
-            var name = Path.GetFileName(sub);
-            var dst = Path.Combine(destDir, name);
-            CopyDirectoryIncremental(sub, dst, ct);
-        }
-    }
+  
 
     public async Task SyncFilesFromLiveToBetaAsync(CancellationToken ct = default)
     {
@@ -2470,21 +2427,34 @@ public class SyncController
     private void CreateOrSyncLocalFiles(Project project, CancellationToken ct = default)
     {
         // 1) Ensure local folders exist (your existing method)
-        CreateProjectDirectory(project); // keeps your default subfolders. :contentReference[oaicite:3]{index=3}
+        CreateProjectDirectory(project);
 
-        // 2) Pull from Live into that local folder (incremental)
         try
         {
-            var localPath = GetProjectPath(project);                      // year/month/ProjNumber :contentReference[oaicite:4]{index=4}
+            var localPath = GetProjectPath(project); // year/month/ProjNumber
             if (string.IsNullOrWhiteSpace(localPath) || !Directory.Exists(localPath))
+            {
+                _logger.LogWarning("Skipping project {ProjId} (ProjNumber {ProjNumber}) because local path is invalid or missing: {LocalPath}",
+                    project.ProjId, project.ProjNumber, localPath);
                 return;
+            }
 
-            // You likely have these on your Project model; if the names differ, just map:
-            var liveDir = TryResolveLiveDir(project.SyncProId.Value,   // prefer OCPC's ID if you keep it
+            var liveDir = TryResolveLiveDir(project.SyncProId.Value,
                                             project.PlanNo.Value,
                                             project.Title);
+
             if (!string.IsNullOrEmpty(liveDir) && Directory.Exists(liveDir))
+            {
+                _logger.LogInformation("Syncing project {ProjId} (ProjNumber {ProjNumber}) from live dir {LiveDir} → local dir {LocalDir}",
+                    project.ProjId, project.ProjNumber, liveDir, localPath);
+
                 CopyDirectoryIncremental(liveDir, localPath, ct);
+            }
+            else
+            {
+                _logger.LogWarning("Live directory not found for project {ProjId} (ProjNumber {ProjNumber}): {LiveDir}",
+                    project.ProjId, project.ProjNumber, liveDir);
+            }
         }
         catch (Exception ex)
         {
@@ -2492,6 +2462,62 @@ public class SyncController
                 project.ProjId, project.ProjNumber);
         }
     }
+
+    private void CopyDirectoryIncremental(string sourceDir, string destDir, CancellationToken ct)
+    {
+        Directory.CreateDirectory(destDir);
+        _logger.LogInformation("Scanning directory {SourceDir}", sourceDir);
+
+        // Files
+        foreach (var file in Directory.EnumerateFiles(sourceDir))
+        {
+            ct.ThrowIfCancellationRequested();
+            var fileName = Path.GetFileName(file);
+            var destPath = Path.Combine(destDir, fileName);
+
+            try
+            {
+                var srcInfo = new FileInfo(file);
+                var dstInfo = new FileInfo(destPath);
+
+                bool shouldCopy =
+                    !dstInfo.Exists ||
+                    dstInfo.Length != srcInfo.Length ||
+                    dstInfo.LastWriteTimeUtc < srcInfo.LastWriteTimeUtc;
+
+                if (shouldCopy)
+                {
+                    _logger.LogInformation("Copying file {FileName} from {Source} → {Destination}",
+                        fileName, file, destPath);
+
+                    File.Copy(file, destPath, overwrite: true);
+                    File.SetLastWriteTimeUtc(destPath, srcInfo.LastWriteTimeUtc);
+                }
+                else
+                {
+                    _logger.LogDebug("Skipping unchanged file {FileName}", fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to copy file {FileName} from {Source} to {Destination}",
+                    fileName, file, destPath);
+            }
+        }
+
+        // Subdirectories (recurse)
+        foreach (var sub in Directory.EnumerateDirectories(sourceDir))
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(sub);
+            var dst = Path.Combine(destDir, name);
+
+            _logger.LogInformation("Descending into subdirectory {SubDir}", sub);
+
+            CopyDirectoryIncremental(sub, dst, ct);
+        }
+    }
+
     private static SqlParameter ToIntTvp(string name, IEnumerable<int> values)
     {
         var table = new DataTable();

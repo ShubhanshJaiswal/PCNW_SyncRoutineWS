@@ -80,30 +80,40 @@ public class SyncController
 
             // project sync code
 
+            // already-synced IDs (by SyncProId) so we don’t re-add
             var syncedProjectsIds = _PCNWContext.Projects
                 .Where(p => p.SyncProId != null)
                 .AsNoTracking()
                 .Select(p => p.SyncProId!.Value)
                 .ToHashSet();
 
-            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
+            // compute retention cutoff once
+            var cutoff = GetRetentionCutoffOrNull();
 
+            // Pull ALL source projects (OCPC) in-memory only if you must.
+            // If table is big, prefer filtering server-side instead of ToHashSet().
+            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToList();
+
+            // Exclude:
+            // - projects not marked for sync (SyncStatus != 1) *unless* not yet synced
+            // - unpublished
+            // - **expired by retention** (BidDt < cutoff) — if BidDt is null, allow it through
             var tblProjects = allprojectrecords
                 .Where(proj =>
                     (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) &&
-                    proj.Publish == true)
+                    proj.Publish == true &&
+                    (cutoff == null || !proj.BidDt.HasValue || proj.BidDt.Value >= cutoff.Value))
                 .ToList();
 
+            // If you also soft-delete in OCPC (e.g., SyncStatus == 3), exclude them too:
+            //// .Where(proj => proj.SyncStatus != 3 /* deleted */ && ...)
 
+            var tblProjectIds = tblProjects.Select(m => m.ProjId).ToHashSet();
 
-            //var tblProjects = _OCOCContext.TblProjects.Where(m => m.ProjId == 249587).ToList();
-
-
-            var tblProjectIds = tblProjects.Select(m => m.ProjId);
+            // counties only for the kept projects
             var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
             var tblProjCounty = tblProjects.Count != 0
-                ? [.. allcountiesrecords
-                        .Where(projCounty => tblProjectIds.Contains(projCounty.ProjId))]
+                ? allcountiesrecords.Where(pc => tblProjectIds.Contains(pc.ProjId)).ToList()
                 : new List<TblProjCounty>();
 
             ProcessProjectFunctionality(tblProjects, tblProjCounty);
@@ -131,16 +141,26 @@ public class SyncController
 
             UpdateDirectory(ProjNumbers);
 
+
+            await CleanupStorageByPolicyAsync();
+            await SyncFilesFromLiveToBetaAsync();
+
+
+
+
+
+
             var syncedProjIds = _PCNWContext.Projects
-    .Where(p => p.SyncProId != null && p.ArrivalDt > DateTime.Now.AddMonths(-30)).OrderByDescending(m => m.ProjId)
+    .Where(p => p.SyncProId != null && p.ArrivalDt > DateTime.Now.AddMonths(-3)).OrderByDescending(m => m.ProjId)
     .Select(p => p.SyncProId.Value)
     .ToList();
 
             // Step 2: Identify mismatched counties between OCPC and PCNW
             var mismatchedProjectIds = new List<long>();
-
+            _logger.LogInformation("syncedProjIds Count: {0} .", syncedProjIds.Count);
             foreach (var projId in syncedProjIds)
             {
+                _logger.LogInformation("Checking Id : {0} .", projId);
                 var ocpcCountyIds = _OCOCContext.TblProjCounties
                     .Where(c => c.ProjId == projId)
                     .Select(c => c.CountyId)
@@ -165,6 +185,7 @@ public class SyncController
 
                 }
             }
+            _logger.LogInformation("Checking Completete");
 
             // Step 3: Fetch the mismatched project records and counties from OCPC
             var ids = mismatchedProjectIds.ToArray(); // force simple SQL generation
@@ -214,8 +235,7 @@ public class SyncController
             //    .ToList();
 
             //ProcessAddendaFunctionality(tblAddenda);
-            await CleanupStorageByPolicyAsync();
-            await SyncFilesFromLiveToBetaAsync();
+            
             #endregion SYNC FROM OCPCLive - PCNWTest
 
             _logger.LogInformation("Sync from OCPCProjectDB to PCNWProjectDB is completed.");
@@ -227,6 +247,19 @@ public class SyncController
 
         //Log Entry and Success Message
         _logger.LogInformation("Sync Completed Successfully..");
+    }
+    private DateTime? GetRetentionCutoffOrNull()
+    {
+        // read latest storage policy from PCNW DB
+        var policy = _PCNWContext.Set<TblFileStorage>()
+            .AsNoTracking()
+            .OrderByDescending(x => x.Id)
+            .Select(x => x.FileStorage)
+            .FirstOrDefault();
+
+        var months = ParseRetentionMonths(policy);
+        if (months <= 0) return null; // no policy = don't filter by date
+        return DateTime.Today.AddMonths(-months);
     }
 
     public void UpdateDirectory(IEnumerable<string> projectNumbers)

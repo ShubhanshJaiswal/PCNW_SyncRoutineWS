@@ -2154,6 +2154,10 @@ public class SyncController
                 // Load + RemoveRange for each child table (pure EF)
                 // NOTE: If you know the entity keys, you can optimize by projecting keys and attaching stubs to delete.
                 // Here we ToListAsync() to keep it simple and safe.
+
+                var traffics = await db.ProjectTraffics.Where(x => x.ProjectId == pid).ToListAsync(ct);
+                db.ProjectTraffics.RemoveRange(traffics);
+
                 var counties = await db.ProjCounties.Where(x => x.ProjId == pid).ToListAsync(ct);
                 db.ProjCounties.RemoveRange(counties);
 

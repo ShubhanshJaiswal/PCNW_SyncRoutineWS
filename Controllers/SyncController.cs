@@ -239,6 +239,7 @@ public class SyncController
                 {
                     try
                     {
+                        if (item == "0" || string.IsNullOrEmpty(item)) continue;
                         string basePath = _fileUploadPath;
                         string projectPath = Path.Combine(basePath, string.Concat("20", item.AsSpan(0, 2)), item.Substring(2, 2), item);
                         if (string.IsNullOrEmpty(projectPath))

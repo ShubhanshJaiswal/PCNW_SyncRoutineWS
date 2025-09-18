@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using PCNW.Models;
 
 namespace SyncRoutineWS.PCNWModel;
 
@@ -36,6 +37,8 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
     public virtual DbSet<ProjCounty> ProjCounties { get; set; }
 
     public virtual DbSet<Project> Projects { get; set; }
+    public virtual DbSet<TblFileStorage> FileStorages{ get; set; }
+    public virtual DbSet<PhlInfo> PhlInfos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

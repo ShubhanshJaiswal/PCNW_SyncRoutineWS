@@ -1,10 +1,12 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using PCNW.Models;
 using Polly;
 using Serilog;
 using SyncRoutineWS.OCPCModel;
 using SyncRoutineWS.PCNWModel;
+using System.Data;
 using System.IO;
 using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
@@ -20,7 +22,9 @@ public class SyncController
     private readonly ILogger<SyncController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private UserManager<IdentityUser>? _userManager;
-    private readonly string _fileUploadPath;
+    private readonly string _fileUploadPath; 
+    private readonly string _liveProjectsRoot;
+    private readonly int _copyDegreeOfParallelism = 4;
 
     public SyncController(IServiceScopeFactory scopeFactory, ILogger<SyncController> logger, OCPCProjectDBContext OCPCcont1, PCNWProjectDBContext PCNWcont2, IConfiguration configuration)
     {
@@ -30,6 +34,7 @@ public class SyncController
         _PCNWContext = PCNWcont2;
         _scopeFactory = scopeFactory;
         _fileUploadPath = _configuration.GetSection("AppSettings")["FileUploadPath"] ?? string.Empty;
+        _liveProjectsRoot = _configuration.GetSection("AppSettings")["LiveProjectsRoot"] ?? string.Empty;
     }
 
     public async Task SyncDatabases()
@@ -78,7 +83,7 @@ public class SyncController
             var syncedProjectsIds = _PCNWContext.Projects
                 .Where(p => p.SyncProId != null)
                 .AsNoTracking()
-                .Select(p => p.SyncProId!.Value)  
+                .Select(p => p.SyncProId!.Value)
                 .ToHashSet();
 
             var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToHashSet();
@@ -209,7 +214,8 @@ public class SyncController
             //    .ToList();
 
             //ProcessAddendaFunctionality(tblAddenda);
-
+            await CleanupStorageByPolicyAsync();
+            await SyncFilesFromLiveToBetaAsync();
             #endregion SYNC FROM OCPCLive - PCNWTest
 
             _logger.LogInformation("Sync from OCPCProjectDB to PCNWProjectDB is completed.");
@@ -1139,7 +1145,7 @@ public class SyncController
                     try
                     {
                         _logger.LogInformation($"Creating Directory for Project ID {proj.ProjId}");
-                        CreateProjectDirectory(propProject);
+                        CreateOrSyncLocalFiles(propProject);
                         _logger.LogInformation($"Successfully Created Directory for Project ID {proj.ProjId}");
                     }
                     catch (Exception)
@@ -1371,7 +1377,7 @@ public class SyncController
                     try
                     {
                         _logger.LogInformation($"Creating Directory for Project ID {proj.ProjId}");
-                        CreateProjectDirectory(propProject);
+                        CreateOrSyncLocalFiles(propProject);
                         _logger.LogInformation($"Successfully Created Directory for Project ID {proj.ProjId}");
                     }
                     catch (Exception)
@@ -2015,5 +2021,490 @@ public class SyncController
             throw;
         }
     }
+    private static int ParseRetentionMonths(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return 0;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "1 month" => 1,
+            "6 months" => 6,
+            "1 year" => 12,
+            "18 months" => 18,
+            "2 years" => 24,
+            _ => 0
+        };
+    }
+
+    // Build path from a ProjNumber using the same convention you use elsewhere:
+    // base / "20" + YY / MM / ProjNumber  (e.g., FileUploadPath/2025/09/2509xxxx)
+    private string GetProjectPathForNumber(string projNumber)
+    {
+        var basePath = _fileUploadPath;
+        var year = string.Concat("20", projNumber.AsSpan(0, 2));
+        var month = projNumber.Substring(2, 2);
+        return Path.Combine(basePath, year, month, projNumber);
+    }
+
+    public async Task CleanupStorageByPolicyAsync(bool whatIf = false, CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PCNWProjectDBContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<SyncController>>();
+
+        // 1) Load storage policy
+        var storageRow = await db.FileStorages
+            .AsNoTracking()
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        var months = ParseRetentionMonths(storageRow?.FileStorage);
+        if (months <= 0)
+        {
+            logger.LogInformation("Cleanup skipped: no valid FileStorage value set.");
+            return;
+        }
+
+        var cutoff = DateTime.Today.AddMonths(-months);
+        logger.LogInformation("Cleanup policy: {Policy} ⇒ cutoff {Cutoff:d}.", storageRow!.FileStorage, cutoff);
+
+        // 2) Pick candidate projects
+        var candidates = await db.Projects
+            .AsNoTracking()
+            .Where(p => p.BidDt != null && p.BidDt < cutoff)
+            .Select(p => new { p.ProjId, p.ProjNumber })
+            .ToListAsync(ct);
+
+        if (candidates.Count == 0)
+        {
+            logger.LogInformation("Cleanup found 0 projects older than {Cutoff:d}.", cutoff);
+            return;
+        }
+
+        var deleteIds = candidates.Select(c => c.ProjId).Distinct().ToList();
+        var deleteNumbers = candidates.Select(c => c.ProjNumber)
+                                      .Where(n => !string.IsNullOrWhiteSpace(n))
+                                      .Distinct()
+                                      .ToList();
+
+        logger.LogInformation("Cleanup will remove {Count} projects.", deleteIds.Count);
+
+        if (whatIf)
+        {
+            // Per-project WHATIF logging (counts only)
+            foreach (var pid in deleteIds)
+            {
+                var counts = await CountChildrenAsync(db, pid, ct);
+                logger.LogInformation(
+                    "WHATIF ProjId {ProjId}: ProjCounties={Cnt1}, Entities={Cnt2}, PhlInfos={Cnt3}, PreBidInfos={Cnt4}, EstCostDetails={Cnt5}, Project=1",
+                    pid, counts.ProjCounties, counts.Entities, counts.PhlInfos, counts.PreBidInfos, counts.EstCostDetails);
+            }
+            logger.LogInformation("WHATIF mode: no deletions performed.");
+            return;
+        }
+
+        // 3) DB deletes (pure EF RemoveRange) — do it per project to keep memory low and to log per-project
+        //    Everything in a single transaction for consistency.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        // Recommended: process in batches of projects (e.g., 200) to avoid long transactions if delete set is huge
+        const int projectBatchSize = 200;
+        for (int i = 0; i < deleteIds.Count; i += projectBatchSize)
+        {
+            var batch = deleteIds.Skip(i).Take(projectBatchSize).ToList();
+
+            foreach (var pid in batch)
+            {
+                // Count first (for logging)
+                var counts = await CountChildrenAsync(db, pid, ct);
+
+                // Load + RemoveRange for each child table (pure EF)
+                // NOTE: If you know the entity keys, you can optimize by projecting keys and attaching stubs to delete.
+                // Here we ToListAsync() to keep it simple and safe.
+                var counties = await db.ProjCounties.Where(x => x.ProjId == pid).ToListAsync(ct);
+                db.ProjCounties.RemoveRange(counties);
+
+                var entities = await db.Entities.Where(x => x.ProjId == pid).ToListAsync(ct);
+                db.Entities.RemoveRange(entities);
+
+                var phls = await db.PhlInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
+                db.PhlInfos.RemoveRange(phls);
+
+                var prebids = await db.PreBidInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
+                db.PreBidInfos.RemoveRange(prebids);
+
+                var estCosts = await db.EstCostDetails.Where(x => x.ProjId == pid).ToListAsync(ct);
+                db.EstCostDetails.RemoveRange(estCosts);
+
+                // Parent last
+                var project = await db.Projects.FirstOrDefaultAsync(p => p.ProjId == pid, ct);
+                if (project != null)
+                {
+                    db.Projects.Remove(project);
+                }
+
+                // Save per project (or per few projects) to avoid huge change tracker
+                await db.SaveChangesAsync(ct);
+
+                logger.LogInformation(
+                    "Deleted ProjId {ProjId}: ProjCounties={Cnt1}, Entities={Cnt2}, PhlInfos={Cnt3}, PreBidInfos={Cnt4}, EstCostDetails={Cnt5}, Project={ParentCnt}",
+                    pid,
+                    counts.ProjCounties,
+                    counts.Entities,
+                    counts.PhlInfos,
+                    counts.PreBidInfos,
+                    counts.EstCostDetails,
+                    project != null ? 1 : 0);
+            }
+        }
+
+        await tx.CommitAsync(ct);
+
+        // 4) Filesystem cleanup (best-effort; non-fatal) — logs per project folder
+        if (!string.IsNullOrWhiteSpace(_fileUploadPath) && Directory.Exists(_fileUploadPath))
+        {
+            int fsDeleted = 0, fsErrors = 0;
+
+            foreach (var projNo in deleteNumbers)
+            {
+                try
+                {
+                    var projDir = GetProjectPathForNumber(projNo);
+                    if (!string.IsNullOrWhiteSpace(projDir) && Directory.Exists(projDir))
+                    {
+                        Directory.Delete(projDir, recursive: true);
+                        fsDeleted++;
+                        logger.LogInformation("Deleted folder for project {ProjNumber}: {Path}", projNo, projDir);
+                    }
+                    else
+                    {
+                        logger.LogInformation("No folder found for project {ProjNumber} at {Path}", projNo, projDir);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    fsErrors++;
+                    logger.LogWarning(ex, "Failed to delete directory for project {ProjNumber}", projNo);
+                }
+            }
+
+            logger.LogInformation("Filesystem cleanup: deleted {Ok} folders, {Err} errors.", fsDeleted, fsErrors);
+        }
+        else
+        {
+            logger.LogInformation("Filesystem cleanup skipped: base directory missing/not set: {Base}", _fileUploadPath);
+        }
+
+        logger.LogInformation("Cleanup finished. Deleted {Count} projects older than {Cutoff:d}.", deleteIds.Count, cutoff);
+    }
+
+    // --------- Helpers (pure C#) ---------
+
+    private sealed record ChildCounts(
+        int ProjCounties,
+        int Entities,
+        int PhlInfos,
+        int PreBidInfos,
+        int EstCostDetails
+    );
+
+    private static async Task<ChildCounts> CountChildrenAsync(PCNWProjectDBContext db, int projectId, CancellationToken ct)
+    {
+        var c1 = await db.ProjCounties.Where(x => x.ProjId == projectId).CountAsync(ct);
+        var c2 = await db.Entities.Where(x => x.ProjId == projectId).CountAsync(ct);
+        var c3 = await db.PhlInfos.Where(x => x.ProjId == projectId).CountAsync(ct);
+        var c4 = await db.PreBidInfos.Where(x => x.ProjId == projectId).CountAsync(ct);
+        var c5 = await db.EstCostDetails.Where(x => x.ProjId == projectId).CountAsync(ct);
+        return new ChildCounts(c1, c2, c3, c4, c5);
+    }
+    private static string TruncateSafe(string? s, int max)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        return s.Length > max ? s.Substring(0, max).Trim() : s.Trim();
+    }
+
+    // Optional: strip forbidden path chars from title
+    private static string SanitizeForPath(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        return name;
+    }
+
+    private static string BuildLiveFolderName(long planNumber, long projId, string? title)
+    {
+        var t = SanitizeForPath(TruncateSafe(title, 15));
+        return $"({planNumber}) ({projId}) {t}";
+    }
+    private static readonly Regex _liveDirRegex =
+    new Regex(@"\((\d+)\)\s*\((\d+)\)\s*(.*)$", RegexOptions.Compiled);
+
+    // Fallback regex if some folders are "(255899) ..." only
+    private static readonly Regex _fallbackProjRegex =
+        new Regex(@"\((\d+)\)", RegexOptions.Compiled);
+
+    private async Task<Dictionary<long, string>> BuildLiveDirIndexAsync(CancellationToken ct)
+    {
+        var index = new Dictionary<long, string>(); // projId -> fullpath
+
+        if (string.IsNullOrWhiteSpace(_liveProjectsRoot) || !Directory.Exists(_liveProjectsRoot))
+            return index;
+
+        // Enumerate top-level project folders
+        foreach (var path in Directory.EnumerateDirectories(_liveProjectsRoot))
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(path);
+
+            var m = _liveDirRegex.Match(name);
+            if (m.Success && long.TryParse(m.Groups[2].Value, out var projId2))
+            {
+                index[projId2] = path;
+                continue;
+            }
+
+            // Fallback: any (...) will be treated as projId when exact format is missing
+            var mf = _fallbackProjRegex.Match(name);
+            if (mf.Success && long.TryParse(mf.Groups[1].Value, out var projIdOnly))
+            {
+                // prefer exact match if already present
+                if (!index.ContainsKey(projIdOnly))
+                    index[projIdOnly] = path;
+            }
+        }
+
+        return await Task.FromResult(index);
+    }
+    private string GetBetaProjectDir(string projNumber)
+    {
+        var year = "20" + projNumber.Substring(0, 2);
+        var month = projNumber.Substring(2, 2);
+        return Path.Combine(_fileUploadPath, year, month, projNumber);
+    }
+    private static void CopyDirectoryIncremental(string sourceDir, string destDir, CancellationToken ct)
+    {
+        Directory.CreateDirectory(destDir);
+
+        // Files
+        foreach (var file in Directory.EnumerateFiles(sourceDir))
+        {
+            ct.ThrowIfCancellationRequested();
+            var fileName = Path.GetFileName(file);
+            var destPath = Path.Combine(destDir, fileName);
+
+            try
+            {
+                var srcInfo = new FileInfo(file);
+                var dstInfo = new FileInfo(destPath);
+
+                bool shouldCopy =
+                    !dstInfo.Exists ||
+                    dstInfo.Length != srcInfo.Length ||
+                    dstInfo.LastWriteTimeUtc < srcInfo.LastWriteTimeUtc;
+
+                if (shouldCopy)
+                {
+                    Directory.CreateDirectory(destDir);
+                    File.Copy(file, destPath, overwrite: true);
+                    File.SetLastWriteTimeUtc(destPath, srcInfo.LastWriteTimeUtc);
+                }
+            }
+            catch
+            {
+                // swallow per-file; you log at caller level
+                throw;
+            }
+        }
+
+        // Subdirectories (recurse)
+        foreach (var sub in Directory.EnumerateDirectories(sourceDir))
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(sub);
+            var dst = Path.Combine(destDir, name);
+            CopyDirectoryIncremental(sub, dst, ct);
+        }
+    }
+
+    public async Task SyncFilesFromLiveToBetaAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_liveProjectsRoot) || !Directory.Exists(_liveProjectsRoot))
+            {
+                _logger.LogInformation("Live projects root not found or not configured: {LiveRoot}", _liveProjectsRoot);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(_fileUploadPath) || !Directory.Exists(_fileUploadPath))
+            {
+                _logger.LogInformation("Beta file root not found or not configured: {BetaRoot}", _fileUploadPath);
+                return;
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PCNWProjectDBContext>();
+
+            // Pull current projects we keep in PCNW (post-cleanup)
+            var projects = await db.Projects
+                .AsNoTracking()
+                .Select(p => new
+                {
+                    p.ProjId,
+                    p.ProjNumber,
+                    p.PlanNo,     
+                    p.Title    
+                })
+                .ToListAsync(ct);
+
+            if (projects.Count == 0)
+            {
+                _logger.LogInformation("No projects found to sync files.");
+                return;
+            }
+
+            // Build Live index once
+            _logger.LogInformation("Indexing Live project folders at {Root} ...", _liveProjectsRoot);
+            var liveIndex = await BuildLiveDirIndexAsync(ct);
+            _logger.LogInformation("Indexed {Count} Live folders.", liveIndex.Count);
+
+            int total = 0, copied = 0, missing = 0, errors = 0;
+
+            // Parallelize for speed
+            var po = new ParallelOptions
+            {
+                CancellationToken = ct,
+                MaxDegreeOfParallelism = _copyDegreeOfParallelism
+            };
+
+            await Task.Run(() =>
+            {
+                Parallel.ForEach(projects, po, proj =>
+                {
+                    po.CancellationToken.ThrowIfCancellationRequested();
+                    Interlocked.Increment(ref total);
+
+                    try
+                    {
+                        // Prefer direct index lookup by ProjId
+                        string? liveDir = null;
+                        if (liveIndex.TryGetValue(proj.ProjId, out var indexed))
+                        {
+                            liveDir = indexed;
+                        }
+                        else
+                        {
+                            // Build expected name, then check (handles title/spacing variants when exact exists)
+                            var expected = BuildLiveFolderName(proj.PlanNo.Value, proj.ProjId, proj.Title);
+                            var candidate = Path.Combine(_liveProjectsRoot, expected);
+                            if (Directory.Exists(candidate))
+                                liveDir = candidate;
+                        }
+
+                        if (string.IsNullOrEmpty(liveDir) || !Directory.Exists(liveDir))
+                        {
+                            Interlocked.Increment(ref missing);
+                            _logger.LogDebug("Live folder missing for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.ProjId, proj.ProjNumber);
+                            return;
+                        }
+
+                        var betaDir = GetBetaProjectDir(proj.ProjNumber);
+                        Directory.CreateDirectory(betaDir);
+
+                        // Copy incrementally (counts are approximate; we log per-project success)
+                        CopyDirectoryIncremental(liveDir, betaDir, po.CancellationToken);
+                        Interlocked.Increment(ref copied);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.Increment(ref errors);
+                        _logger.LogWarning(ex, "File sync failed for ProjId {ProjId} (ProjNumber {ProjNumber}).", proj.ProjId, proj.ProjNumber);
+                    }
+                });
+            }, ct);
+
+            _logger.LogInformation("File sync finished. Projects processed: {Total}. Copied/updated: {Copied}. Missing live folder: {Missing}. Errors: {Errors}.",
+                total, copied, missing, errors);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("File sync canceled.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "File sync crashed.");
+            throw;
+        }
+    }
+
+    /// Try resolve the **Live** folder for a single project.
+    /// Strategy: scan one level of G:\Data\Projects and match by "(plan) (projId) Title",
+    /// falling back to any "(projId)" match if formatting varies.
+    private string? TryResolveLiveDir(long projId, long planNumber, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(_liveProjectsRoot) || !Directory.Exists(_liveProjectsRoot))
+            return null;
+
+        // First: exact expected name
+        var exact = Path.Combine(_liveProjectsRoot, BuildLiveFolderName(planNumber, projId, title));
+        if (Directory.Exists(exact)) return exact;
+
+        // Fallback: scan one level, pull any that embeds (projId)
+        foreach (var path in Directory.EnumerateDirectories(_liveProjectsRoot))
+        {
+            var name = Path.GetFileName(path);
+            var m = _liveDirRegex.Match(name);
+            if (m.Success && long.TryParse(m.Groups[2].Value, out var pid) && pid == projId)
+                return path;
+
+            var mf = _fallbackProjRegex.Match(name);
+            if (mf.Success && long.TryParse(mf.Groups[1].Value, out var only) && only == projId)
+                return path;
+        }
+        return null;
+    }
+
+    private void CreateOrSyncLocalFiles(Project project, CancellationToken ct = default)
+    {
+        // 1) Ensure local folders exist (your existing method)
+        CreateProjectDirectory(project); // keeps your default subfolders. :contentReference[oaicite:3]{index=3}
+
+        // 2) Pull from Live into that local folder (incremental)
+        try
+        {
+            var localPath = GetProjectPath(project);                      // year/month/ProjNumber :contentReference[oaicite:4]{index=4}
+            if (string.IsNullOrWhiteSpace(localPath) || !Directory.Exists(localPath))
+                return;
+
+            // You likely have these on your Project model; if the names differ, just map:
+            var liveDir = TryResolveLiveDir(project.SyncProId ?? project.ProjId,   // prefer OCPC's ID if you keep it
+                                            project.PlanNo.Value,
+                                            project.Title);
+            if (!string.IsNullOrEmpty(liveDir) && Directory.Exists(liveDir))
+                CopyDirectoryIncremental(liveDir, localPath, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Live→Local copy failed for ProjId {ProjId} (ProjNumber {ProjNumber}).",
+                project.ProjId, project.ProjNumber);
+        }
+    }
+    private static SqlParameter ToIntTvp(string name, IEnumerable<int> values)
+    {
+        var table = new DataTable();
+        table.Columns.Add("Value", typeof(int));
+        foreach (var v in values)
+            table.Rows.Add(v);
+
+        return new SqlParameter(name, SqlDbType.Structured)
+        {
+            TypeName = "dbo.IntList",  // must match the type you created in SQL Server
+            Value = table
+        };
+    }
+
 
 }

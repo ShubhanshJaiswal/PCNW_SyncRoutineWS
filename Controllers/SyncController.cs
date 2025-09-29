@@ -2768,7 +2768,7 @@ public class SyncController
             phl = new PhlInfo
             {
                 ProjId = pcnwProj.ProjId,
-                ConId = beId,
+                MemId = beId,
                 Note = srcPcon.Note,
                 BidDate = bidDt,
                 tComp = hour,

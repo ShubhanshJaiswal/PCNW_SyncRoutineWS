@@ -9,6 +9,7 @@ using SyncRoutineWS.PCNWModel;
 using System.Data;
 using System.Diagnostics.Metrics;
 using System.IO;
+using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
 
@@ -40,216 +41,244 @@ public class SyncController
 
     public async Task SyncDatabases()
     {
-        Log.Information("Sync Started.");
+        _logger.LogInformation("Sync started at {Time}.", DateTime.Now);
 
         try
         {
             using var scope = _scopeFactory.CreateScope();
             _userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
 
-            var baseDirectory = _fileUploadPath;
-            if (!Directory.Exists(baseDirectory))
-            {
-                _logger.LogError("base directory not found: {basedirectory}", baseDirectory);
-                throw new DirectoryNotFoundException($"base directory not found: {baseDirectory}");
-            }
-            _logger.LogInformation($"Application started at {DateTime.Now}", DateTime.Now);
+            // 1) Environment / prerequisites
+            ValidateBaseDirectory(_fileUploadPath);
 
-            #region SYNC FROM OCPCLive - PCNWTest
-
-            //Member Sync code
-
-            //var businessEntityEmails = _PCNWContext.BusinessEntities
-            //                    .Select(be => be.BusinessEntityEmail)
-            //                    .ToHashSet();
-            //var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet(); ;
-
-            //var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-            //                     where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
-            //                     select mem).OrderBy(m => m.Id)
-            //                     .AsNoTracking()
-            //                     .ToList();
-
-            //var memberids = tblOCPCMember.Select(m => m.Id).ToList();
-
-            //var tblOCPCContact = _OCOCContext.TblContacts
-            //    .AsNoTracking()
-            //    .ToList();
-
-            //tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
-            //ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
-
-            // project sync code
-
-            // already-synced IDs (by SyncProId) so we don’t re-add
-            var syncedProjectsIds = _PCNWContext.Projects
-                .Where(p => p.SyncProId != null)
-                .AsNoTracking()
-                .Select(p => p.SyncProId!.Value)
-                .ToHashSet();
-
-            // compute retention cutoff once
+            // 2) Core project sync from OCPC → PCNW
+            var syncedProjectIds = GetSyncedProjectIds();
             var cutoff = GetRetentionCutoffOrNull();
+            var (projectsForCreateOrRefresh, projectIdsForCreateOrRefresh) = LoadProjectsForInitialSync(syncedProjectIds, cutoff);
+            var countiesForCreateOrRefresh = LoadCountiesForProjects(projectIdsForCreateOrRefresh);
+            ProcessProjectFunctionality(projectsForCreateOrRefresh, countiesForCreateOrRefresh);
 
-            // Pull ALL source projects (OCPC) in-memory only if you must.
-            // If table is big, prefer filtering server-side instead of ToHashSet().
-            var allprojectrecords = _OCOCContext.TblProjects.AsNoTracking().ToList();
+            // 3) Process field-change driven updates
+            var (updateProjects, updateProjCounties) = LoadProjectsForFieldChangeUpdates();
+            UpdateProjectFunctionality(updateProjects, updateProjCounties);
 
-            // Exclude:
-            // - projects not marked for sync (SyncStatus != 1) *unless* not yet synced
-            // - unpublished
-            // - **expired by retention** (BidDt < cutoff) — if BidDt is null, allow it through
-            var tblProjects = allprojectrecords
-                .Where(proj =>
-                    (proj.SyncStatus == 1 || !syncedProjectsIds.Contains(proj.ProjId)) &&
-                    proj.Publish == true &&
-                    (cutoff == null || !proj.BidDt.HasValue || proj.BidDt.Value >= cutoff.Value))
-                .ToList();
+            // 4) Files/folders + storage hygiene
+            CreateRecentProjectDirectories();
+            await CleanupStorageByPolicyAsync().ConfigureAwait(false);
+            await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
-            // If you also soft-delete in OCPC (e.g., SyncStatus == 3), exclude them too:
-            //// .Where(proj => proj.SyncStatus != 3 /* deleted */ && ...)
-
-            var tblProjectIds = tblProjects.Select(m => m.ProjId).ToHashSet();
-
-            // counties only for the kept projects
-            var allcountiesrecords = _OCOCContext.TblProjCounties.AsNoTracking().ToList();
-            var tblProjCounty = tblProjects.Count != 0
-                ? allcountiesrecords.Where(pc => tblProjectIds.Contains(pc.ProjId)).ToList()
-                : new List<TblProjCounty>();
-
-            ProcessProjectFunctionality(tblProjects, tblProjCounty);
-
-            var updateProjectsIds = _OCOCContext.TblProjFieldChngs
-                .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
-                .AsNoTracking()
-                .Select(m => m.ProjId).ToHashSet();
-            var updateProjects = _OCOCContext.TblProjects.Where(m => updateProjectsIds.Contains(m.ProjId) && m.Publish.HasValue && m.Publish.Value).ToList();
-
-            var tblupdateProjCounty = updateProjects.Count != 0
-                ? [.. _OCOCContext.TblProjCounties
-                        .Where(projCounty => updateProjectsIds.Contains(projCounty.ProjId))
-                        .AsNoTracking()]
-                : new List<TblProjCounty>();
-            UpdateProjectFunctionality(updateProjects, tblupdateProjCounty);
-
-
-            //creating the directory for projnumbers(past 2 months)
-            var pastMonthDate = DateTime.Now.AddMonths(-1);
-            int pastMonth = pastMonthDate.Month;
-            int pastYear = pastMonthDate.Year;
-
-            var ProjNumbers = _PCNWContext.Projects.Where(m => m.ArrivalDt.HasValue && m.ArrivalDt.Value.Month >= pastMonth && m.ArrivalDt.Value.Year == pastYear).AsEnumerable().Select(m => m.ProjNumber);
-
-            UpdateDirectory(ProjNumbers);
-
-
-            await CleanupStorageByPolicyAsync();
-            await SyncFilesFromLiveToBetaAsync();
+            // 5) Data backfill / repair passes
             BackfillAoEntityAndPhlForExistingSyncedProjects();
+            FixMismatchedCountyAssignments();
 
+            // ──────────────────────────────────────────────────────────────────────────
+            // OPTIONAL pipelines (kept exactly as comments, just organized)
+            // ──────────────────────────────────────────────────────────────────────────
 
+            // // Member Sync
+            // // var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
+            // // var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
+            // // var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+            // //                      where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
+            // //                      select mem).OrderBy(m => m.Id)
+            // //                     .AsNoTracking().ToList();
+            // // var memberids = tblOCPCMember.Select(m => m.Id).ToList();
+            // // var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().ToList();
+            // // tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
+            // // ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
+            // // Arch Owners
+            // // var tblArch = _OCOCContext.TblArchOwners
+            // //     .Where(arch => (arch.SyncStatus == 1 && !businessEntityEmails.Contains(arch.Email)) || arch.SyncStatus == 2)
+            // //     .AsNoTracking().ToList();
+            // // var tblProArc = _OCOCContext.TblProjAos
+            // //     .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
+            // //     .AsNoTracking().ToList();
+            // // ProcessArchOwnerFunctionality(tblArch, tblProArc);
 
+            // // Contractors
+            // // var tblCont = _OCOCContext.TblContractors
+            // //     .Where(cont => (cont.SyncStatus == 1 && !businessEntityEmails.Contains(cont.Email)) || cont.SyncStatus == 2)
+            // //     .AsNoTracking().ToList();
+            // // var tblProCon = _OCOCContext.TblProjCons
+            // //     .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
+            // //     .AsNoTracking().ToList();
+            // // ProcessContractorFunctionality(tblCont, tblProCon);
 
+            // // Addenda
+            // // var tblAddenda = _OCOCContext.TblAddenda
+            // //     .Where(adden => adden.SyncStatus == 1 || adden.SyncStatus == 2)
+            // //     .AsNoTracking().ToList();
+            // // ProcessAddendaFunctionality(tblAddenda);
 
-            var syncedProjIds = _PCNWContext.Projects
-    .Where(p => p.SyncProId != null && p.ArrivalDt > DateTime.Now.AddMonths(-3)).OrderByDescending(m => m.ProjId)
-    .Select(p => p.SyncProId.Value)
-    .ToList();
-
-            // Step 2: Identify mismatched counties between OCPC and PCNW
-            var mismatchedProjectIds = new List<long>();
-            _logger.LogInformation("syncedProjIds Count: {0} .", syncedProjIds.Count);
-            foreach (var projId in syncedProjIds)
-            {
-                _logger.LogInformation("Checking Id : {0} .", projId);
-                var ocpcCountyIds = _OCOCContext.TblProjCounties
-                    .Where(c => c.ProjId == projId)
-                    .Select(c => c.CountyId)
-                    .OrderBy(c => c)
-                    .ToList();
-
-                var pcnwCountyIds = _PCNWContext.ProjCounties
-                    .Where(c => c.ProjId == _PCNWContext.Projects
-                                                    .Where(p => p.SyncProId == projId)
-                                                    .Select(p => p.ProjId)
-                                                    .FirstOrDefault())
-                    .Select(c => c.CountyId)
-                    .OrderBy(c => c)
-                    .ToList();
-
-                bool isMismatch = !ocpcCountyIds.SequenceEqual(pcnwCountyIds);
-
-                if (isMismatch)
-                {
-                    _logger.LogInformation("Found ProjID: {0} .", projId);
-                    mismatchedProjectIds.Add(projId);
-
-                }
-            }
-            _logger.LogInformation("Checking Completete");
-
-            // Step 3: Fetch the mismatched project records and counties from OCPC
-            var ids = mismatchedProjectIds.ToArray(); // force simple SQL generation
-
-            var mismatchedProjects = _OCOCContext.TblProjects
-    .AsEnumerable() // switch to LINQ to Objects
-    .Where(p => mismatchedProjectIds.Contains(p.ProjId))
-    .ToList();
-
-            var mismatchedProjCounties = _OCOCContext.TblProjCounties
-    .AsEnumerable() // switch to LINQ to Objects
-                .Where(c => ids.Contains(c.ProjId))
-                .ToList();
-            _logger.LogInformation("Found {0} mismatched projects.", mismatchedProjectIds.Count);
-            // Step 4: Call your existing function
-            UpdateProjectFunctionality(mismatchedProjects, mismatchedProjCounties);
-
-            // Query Arch Owners
-
-            //var tblArch = _OCOCContext.TblArchOwners
-            //    .Where(arch => (arch.SyncStatus == 1 && !businessEntityEmails.Contains(arch.Email)) || arch.SyncStatus == 2)
-            //    .AsNoTracking()
-            //    .ToList();
-
-            // var tblProArc = _OCOCContext.TblProjAos
-            //     .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
-            //     .AsNoTracking()
-            //     .ToList();
-
-            // ProcessArchOwnerFunctionality(tblArch, tblProArc);
-
-            //var tblCont = _OCOCContext.TblContractors
-            //    .Where(cont => (cont.SyncStatus == 1 && !businessEntityEmails.Contains(cont.Email)) || cont.SyncStatus == 2)
-            //    .AsNoTracking()
-            //    .ToList();
-
-            //var tblProCon = _OCOCContext.TblProjCons
-            //    .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
-            //    .AsNoTracking()
-            //    .ToList();
-
-            //ProcessContractorFunctionality(tblCont, tblProCon);
-
-            //var tblAddenda = _OCOCContext.TblAddenda
-            //    .Where(adden => adden.SyncStatus == 1 || adden.SyncStatus == 2)
-            //    .AsNoTracking()
-            //    .ToList();
-
-            //ProcessAddendaFunctionality(tblAddenda);
-            
-            #endregion SYNC FROM OCPCLive - PCNWTest
-
-            _logger.LogInformation("Sync from OCPCProjectDB to PCNWProjectDB is completed.");
+            _logger.LogInformation("Sync from OCPCProjectDB to PCNWProjectDB completed.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred while syncing database.");
+            _logger.LogError(ex, "An error occurred while syncing databases.");
+            throw;
+        }
+        finally
+        {
+            _logger.LogInformation("Sync completed at {Time}.", DateTime.Now);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // Helpers (focused, testable, and re-usable)
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    private void ValidateBaseDirectory(string baseDirectory)
+    {
+        if (!Directory.Exists(baseDirectory))
+        {
+            _logger.LogError("Base directory not found: {BaseDirectory}", baseDirectory);
+            throw new DirectoryNotFoundException($"base directory not found: {baseDirectory}");
+        }
+        _logger.LogInformation("Base directory verified: {BaseDirectory}", baseDirectory);
+    }
+
+    private HashSet<long> GetSyncedProjectIds()
+    {
+        var set = _PCNWContext.Projects
+            .Where(p => p.SyncProId != null)
+            .AsNoTracking()
+            .Select(p => p.SyncProId!.Value)
+            .ToHashSet();
+
+        _logger.LogInformation("Loaded {Count} already-synced project IDs.", set.Count);
+        return set;
+    }
+
+    private (List<TblProject> Projects, HashSet<long> ProjectIds) LoadProjectsForInitialSync(HashSet<long> syncedProjectIds, DateTime? cutoff)
+    {
+        // Pull minimal columns if needed; kept as your original for clarity.
+        var allProjects = _OCOCContext.TblProjects.AsNoTracking().ToList();
+
+        var filtered = allProjects.Where(proj =>
+            (proj.SyncStatus == 1 || !syncedProjectIds.Contains(proj.ProjId)) &&
+            proj.Publish == true &&
+            (cutoff == null || !proj.BidDt.HasValue || proj.BidDt.Value >= cutoff.Value))
+            .ToList();
+
+        var ids = filtered.Select(p => p.ProjId).ToHashSet();
+        _logger.LogInformation("Projects selected for create/refresh: {Count}.", filtered.Count);
+        return (filtered, ids);
+    }
+
+    private List<TblProjCounty> LoadCountiesForProjects(HashSet<long> projIds)
+    {
+        if (projIds.Count == 0) return new List<TblProjCounty>();
+
+        var counties = _OCOCContext.TblProjCounties
+            .AsNoTracking()
+            .Where(pc => projIds.Contains(pc.ProjId))
+            .ToList();
+
+        _logger.LogInformation("Loaded {Count} counties for initial sync.", counties.Count);
+        return counties;
+    }
+
+    private (List<TblProject> Projects, List<TblProjCounty> Counties) LoadProjectsForFieldChangeUpdates()
+    {
+        var updateIds = _OCOCContext.TblProjFieldChngs
+            .Where(proj => proj.FieldName == "SyncProject" && proj.SyncDt == null)
+            .AsNoTracking()
+            .Select(m => m.ProjId)
+            .ToHashSet();
+
+        var projects = _OCOCContext.TblProjects
+            .Where(m => updateIds.Contains(m.ProjId) && m.Publish == true)
+            .AsNoTracking()
+            .ToList();
+
+        var counties = updateIds.Count != 0
+            ? _OCOCContext.TblProjCounties
+                .Where(pc => updateIds.Contains(pc.ProjId))
+                .AsNoTracking()
+                .ToList()
+            : new List<TblProjCounty>();
+
+        _logger.LogInformation("Field-change updates → Projects: {P}, Counties: {C}.", projects.Count, counties.Count);
+        return (projects, counties);
+    }
+
+    private void CreateRecentProjectDirectories()
+    {
+        var pastMonthDate = DateTime.Now.AddMonths(-1);
+        var pastMonth = pastMonthDate.Month;
+        var pastYear = pastMonthDate.Year;
+
+        var projNumbers = _PCNWContext.Projects
+            .Where(m => m.ArrivalDt.HasValue &&
+                        m.ArrivalDt.Value.Month >= pastMonth &&
+                        m.ArrivalDt.Value.Year == pastYear)
+            .AsEnumerable()
+            .Select(m => m.ProjNumber);
+
+        UpdateDirectory(projNumbers);
+        _logger.LogInformation("Recent project directories updated for projects since {Date}.", pastMonthDate);
+    }
+
+    private void FixMismatchedCountyAssignments()
+    {
+        // Look back 3 months among synced projects
+        var recentSynced = _PCNWContext.Projects
+            .Where(p => p.SyncProId != null && p.ArrivalDt > DateTime.Now.AddMonths(-3))
+            .OrderByDescending(m => m.ProjId)
+            .Select(p => p.SyncProId!.Value)
+            .ToList();
+
+        _logger.LogInformation("Checking county mismatches for {Count} recent synced projects.", recentSynced.Count);
+
+        var mismatched = new List<long>();
+        foreach (var srcProjId in recentSynced)
+        {
+            var ocpcCountyIds = _OCOCContext.TblProjCounties
+                .Where(c => c.ProjId == srcProjId)
+                .Select(c => c.CountyId)
+                .OrderBy(c => c)
+                .ToList();
+
+            var pcnwProjId = _PCNWContext.Projects
+                .Where(p => p.SyncProId == srcProjId)
+                .Select(p => p.ProjId)
+                .FirstOrDefault();
+
+            var pcnwCountyIds = _PCNWContext.ProjCounties
+                .Where(c => c.ProjId == pcnwProjId)
+                .Select(c => c.CountyId)
+                .OrderBy(c => c)
+                .ToList();
+
+            if (!ocpcCountyIds.SequenceEqual(pcnwCountyIds))
+            {
+                mismatched.Add(srcProjId);
+                _logger.LogInformation("County mismatch detected for SyncProId {ProjId}.", srcProjId);
+            }
         }
 
-        //Log Entry and Success Message
-        _logger.LogInformation("Sync Completed Successfully..");
+        if (mismatched.Count == 0)
+        {
+            _logger.LogInformation("No county mismatches found.");
+            return;
+        }
+
+        // Fetch from OCPC and apply update
+        var mismatchedProjects = _OCOCContext.TblProjects
+            .AsNoTracking()
+            .Where(p => mismatched.Contains(p.ProjId))
+            .ToList();
+
+        var mismatchedProjCounties = _OCOCContext.TblProjCounties
+            .AsNoTracking()
+            .Where(c => mismatched.Contains(c.ProjId))
+            .ToList();
+
+        _logger.LogInformation("Repairing {Count} projects with county mismatches.", mismatched.Count);
+        UpdateProjectFunctionality(mismatchedProjects, mismatchedProjCounties);
     }
+
     private DateTime? GetRetentionCutoffOrNull()
     {
         // read latest storage policy from PCNW DB
@@ -2578,13 +2607,26 @@ public class SyncController
 
     private int EnsureBusinessEntityForAo(int aoId)
     {
+        using var _ = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["AOId"] = aoId
+        });
+
         // Already present?
         var be = _PCNWContext.BusinessEntities.FirstOrDefault(x => x.SyncAoid == aoId);
-        if (be != null) return be.BusinessEntityId;
+        if (be != null)
+        {
+            _logger.LogInformation("BusinessEntity already exists for AO {AOId}: BE {BusinessEntityId}.", aoId, be.BusinessEntityId);
+            return be.BusinessEntityId;
+        }
 
         // Pull source AO
         var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(x => x.Id == aoId);
-        if (ao == null) throw new InvalidOperationException($"ArchOwner {aoId} not found in OCPC.");
+        if (ao == null)
+        {
+            _logger.LogWarning("ArchOwner {AOId} not found in OCPC.", aoId);
+            throw new InvalidOperationException($"ArchOwner {aoId} not found in OCPC.");
+        }
 
         // Create BE
         be = new BusinessEntity
@@ -2603,6 +2645,7 @@ public class SyncController
         };
         _PCNWContext.BusinessEntities.Add(be);
         _PCNWContext.SaveChanges();
+        _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for AO {AOId} ({Name}).", be.BusinessEntityId, ao.Id, ao.Name);
 
         // Address
         var addr = new Address
@@ -2617,66 +2660,33 @@ public class SyncController
         };
         _PCNWContext.Addresses.Add(addr);
         _PCNWContext.SaveChanges();
+        _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (AO {AOId}).", addr.AddressId, be.BusinessEntityId, ao.Id);
 
         return be.BusinessEntityId;
     }
-    public void BackfillAoEntityAndPhlForExistingSyncedProjects(IEnumerable<int>? onlyTheseOcpcProjIds = null)
-    {
-        var q = _PCNWContext.Projects.AsNoTracking().Where(p => p.SyncProId != null);
-        if (onlyTheseOcpcProjIds != null && onlyTheseOcpcProjIds.Any())
-        {
-            var set = onlyTheseOcpcProjIds.ToHashSet();
-            q = q.Where(p => set.Contains(p.SyncProId!.Value));
-        }
 
-        var destProjects = q.Select(p => new { p.ProjId, p.ProjNumber, p.IsActive, p.SyncProId }).ToList();
-
-        foreach (var dp in destProjects)
-        {
-            try
-            {
-                // Per project (OCPC id -> dp.SyncProId.Value)
-                var pcnwProj = _PCNWContext.Projects.First(p => p.ProjId == dp.ProjId);
-                var ocpcId = dp.SyncProId!.Value;
-
-                // AO -> Entity
-                var projAos = _OCOCContext.TblProjAos.AsNoTracking().Where(x => x.ProjId == ocpcId).ToList();
-                foreach (var pao in projAos)
-                {
-                    var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
-                    var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
-                    var aoName = ao?.Name ?? "Unknown AO";
-                    UpsertEntityForProjAo(pao, pcnwProj, beId, aoName);
-                }
-
-                // CON -> PhlInfo
-                var projCons = _OCOCContext.TblProjCons.AsNoTracking().Where(x => x.ProjId == ocpcId).ToList();
-                foreach (var pcon in projCons)
-                {
-                    var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
-                    var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
-                    var conName = con?.Name ?? "Unknown Contractor";
-                    UpsertPhlForProjCon(pcon, pcnwProj, beId, conName);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Backfill failed for PCNW ProjId {projId}", dp.ProjId);
-            }
-        }
-    }
 
     private int EnsureBusinessEntityForCon(int conId)
     {
-        // Already present?
+        using var _ = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["ConId"] = conId
+        });
+
         var be = _PCNWContext.BusinessEntities.FirstOrDefault(x => x.SyncConId == conId);
-        if (be != null) return be.BusinessEntityId;
+        if (be != null)
+        {
+            _logger.LogInformation("BusinessEntity already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
+            return be.BusinessEntityId;
+        }
 
-        // Pull source Contractor
         var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(x => x.Id == conId);
-        if (con == null) throw new InvalidOperationException($"Contractor {conId} not found in OCPC.");
+        if (con == null)
+        {
+            _logger.LogWarning("Contractor {ConId} not found in OCPC.", conId);
+            throw new InvalidOperationException($"Contractor {conId} not found in OCPC.");
+        }
 
-        // Create BE
         be = new BusinessEntity
         {
             BusinessEntityName = con.Name,
@@ -2693,8 +2703,8 @@ public class SyncController
         };
         _PCNWContext.BusinessEntities.Add(be);
         _PCNWContext.SaveChanges();
+        _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", be.BusinessEntityId, con.Id, con.Name);
 
-        // Address
         var addr = new Address
         {
             BusinessEntityId = be.BusinessEntityId,
@@ -2707,15 +2717,23 @@ public class SyncController
         };
         _PCNWContext.Addresses.Add(addr);
         _PCNWContext.SaveChanges();
+        _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, be.BusinessEntityId, con.Id);
 
         return be.BusinessEntityId;
     }
-
     // === Upserts: TblProjAo -> Entity, TblProjCon -> PhlInfo =====================
+
+    // === Upserts ===============================================================
 
     private void UpsertEntityForProjAo(TblProjAo srcPao, Project pcnwProj, int beId, string aoName)
     {
-        // Try find existing Entity via SyncProjAoid
+        using var _ = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["PCNWProjId"] = pcnwProj.ProjId,
+            ["OCPCProjId"] = srcPao.ProjId,
+            ["AOId"] = srcPao.ArchOwnerId
+        });
+
         var entity = _PCNWContext.Entities.FirstOrDefault(e => e.SyncProjAoid == srcPao.ArchOwnerId && e.ProjId == pcnwProj.ProjId);
 
         if (entity == null)
@@ -2728,12 +2746,16 @@ public class SyncController
                 IsActive = pcnwProj.IsActive,
                 NameId = beId,
                 ConId = AddDefaultContact(beId, 3),
-                ChkIssue = false,           // AO doesn’t issue plans; leave false
-                CompType = 3,               // 3 = Architect/Owner (per your pattern)
+                ChkIssue = false,
+                CompType = 3,
                 SyncStatus = 0,
                 SyncProjAoid = srcPao.ArchOwnerId
             };
             _PCNWContext.Entities.Add(entity);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Inserted Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",
+                entity.EntityId, pcnwProj.ProjId, srcPao.ArchOwnerId, beId, aoName);
         }
         else
         {
@@ -2742,13 +2764,21 @@ public class SyncController
             entity.IsActive = pcnwProj.IsActive;
             entity.NameId = beId;
             _PCNWContext.Update(entity);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Updated Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",
+                entity.EntityId, pcnwProj.ProjId, srcPao.ArchOwnerId, beId, aoName);
         }
-
-        _PCNWContext.SaveChanges();
     }
-
     private void UpsertPhlForProjCon(TblProjCon srcPcon, Project pcnwProj, int beId, string conName)
     {
+        using var _ = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["PCNWProjId"] = pcnwProj.ProjId,
+            ["OCPCProjId"] = srcPcon.ProjId,
+            ["ConId"] = srcPcon.ConId
+        });
+
         var phl = _PCNWContext.PhlInfos
             .FirstOrDefault(p => p.ProjId == pcnwProj.ProjId && p.ConId == beId);
 
@@ -2757,15 +2787,14 @@ public class SyncController
         DateTime? bidDt = srcPcon.TimeStamp;
         if (bidDt.HasValue)
         {
-            hour = bidDt.Value.ToString("hh"); // 12-hour format with leading zero
+            hour = bidDt.Value.ToString("hh");
             minute = bidDt.Value.ToString("mm");
-            ampm = bidDt.Value.ToString("tt"); // AM or PM
+            ampm = bidDt.Value.ToString("tt");
         }
-        var Bidstatus = srcPcon.Bidding == true ? 1 : srcPcon.NotBidding == true ? 2 : srcPcon.Lm == true ? 3 : 0;
+        var bidStatus = srcPcon.Bidding == true ? 1 : srcPcon.NotBidding == true ? 2 : srcPcon.Lm == true ? 3 : 0;
 
         if (phl == null)
         {
-            
             phl = new PhlInfo
             {
                 ProjId = pcnwProj.ProjId,
@@ -2776,13 +2805,17 @@ public class SyncController
                 tComp = hour,
                 hComp = minute,
                 mValue = ampm,
-                BidStatus = Bidstatus,
+                BidStatus = bidStatus,
                 IsActive = true,
-                CompType = 2,                   // contractor
+                CompType = 2,
                 PhlType = srcPcon.ConTypeId,
                 PST = "PT"
             };
             _PCNWContext.PhlInfos.Add(phl);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Inserted PhlInfo {PhlInfoId} for Proj {ProjId} (Con BE {BEId}, Name '{ConName}', BidDate {BidDate} {Hour}:{Minute} {AMPM}, Status {Status}).",
+                phl.Id, pcnwProj.ProjId, beId, conName, bidDt, hour, minute, ampm, bidStatus);
         }
         else
         {
@@ -2793,79 +2826,199 @@ public class SyncController
             phl.mValue = ampm ?? phl.mValue;
             phl.PhlType = srcPcon.ConTypeId ?? phl.PhlType;
             _PCNWContext.Update(phl);
-        }
+            _PCNWContext.SaveChanges();
 
-        _PCNWContext.SaveChanges();
+            _logger.LogInformation("Updated PhlInfo {PhlInfoId} for Proj {ProjId} (Con BE {BEId}, Name '{ConName}', BidDate {BidDate} {Hour}:{Minute} {AMPM}, Status {Status}).",
+                phl.Id, pcnwProj.ProjId, beId, conName, phl.BidDate, phl.tComp, phl.hComp, phl.mValue, phl.BidStatus);
+        }
     }
     private int? AddDefaultContact(int id, int compType)
     {
+        using var _ = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["BusinessEntityId"] = id,
+            ["CompType"] = compType
+        });
+
         try
         {
-            var IsOrgCompanyContact = _PCNWContext.BusinessEntities.FirstOrDefault(m => m.BusinessEntityId == id);
+            var be = _PCNWContext.BusinessEntities.FirstOrDefault(m => m.BusinessEntityId == id);
             var contactName = "CompanyContact";
             var contact = _PCNWContext.Contacts.FirstOrDefault(m => m.ContactName == contactName && m.BusinessEntityId == id);
             if (contact is not null)
             {
+                _logger.LogInformation("Default contact already exists: ContactId {ContactId} for BE {BusinessEntityId}.", contact.ContactId, id);
                 return contact.ContactId;
             }
+
             contact = new()
             {
                 MainContact = false,
                 ContactName = contactName,
                 BusinessEntityId = id,
-                ContactEmail = IsOrgCompanyContact.BusinessEntityEmail,
-                CompType = (int)compType,
-                ContactPhone = IsOrgCompanyContact.BusinessEntityPhone,
+                ContactEmail = be?.BusinessEntityEmail,
+                CompType = compType,
+                ContactPhone = be?.BusinessEntityPhone,
                 Password = "",
             };
 
             _PCNWContext.Contacts.Add(contact);
-            var row = _PCNWContext.SaveChanges();
+            _PCNWContext.SaveChanges();
 
+            _logger.LogInformation("Created default contact {ContactId} for BE {BusinessEntityId}.", contact.ContactId, id);
             return contact.ContactId;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Ideally log the  here
+            _logger.LogError(ex, "Failed to add/find default contact for BE {BusinessEntityId}.", id);
+            return null;
         }
-
-        return null;
     }
+
     public void SyncAoAndConForOcpcProject(int ocpcProjId)
     {
-        // Find destination project
-        var pcnwProj = _PCNWContext.Projects.FirstOrDefault(p => p.SyncProId == ocpcProjId);
-        if (pcnwProj == null) { _logger.LogWarning("PCNW Project not found for OCPC ProjId {id}", ocpcProjId); return; }
+        using var scope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["OCPCProjId"] = ocpcProjId
+        });
 
-        // === AO -> Entity =========================================================
+        var pcnwProj = _PCNWContext.Projects.FirstOrDefault(p => p.SyncProId == ocpcProjId);
+        if (pcnwProj == null)
+        {
+            _logger.LogWarning("PCNW Project not found for OCPC ProjId {OCPCProjId}.", ocpcProjId);
+            return;
+        }
+
+        _logger.LogInformation("Starting sync for OCPC ProjId {OCPCProjId} -> PCNW ProjId {PCNWProjId}.", ocpcProjId, pcnwProj.ProjId);
+
+        // AO -> Entity
         var projAos = _OCOCContext.TblProjAos.AsNoTracking().Where(x => x.ProjId == ocpcProjId).ToList();
         foreach (var pao in projAos)
         {
-            // Ensure BE for this AO
-            var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
-            var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
-            var aoName = ao?.Name ?? "Unknown AO";
+            try
+            {
+                using var aoScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["AOId"] = pao.ArchOwnerId,
+                    ["PCNWProjId"] = pcnwProj.ProjId
+                });
 
-            UpsertEntityForProjAo(pao, pcnwProj, beId, aoName);
-
-            // Mark processed in OCPC if you want:
-            // pao.SyncStatus = 3;
-            // _OCOCContext.Update(pao);
-            // _OCOCContext.SaveChanges();
+                var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
+                var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
+                var aoName = ao?.Name ?? "Unknown AO";
+                UpsertEntityForProjAo(pao, pcnwProj, beId, aoName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed syncing AO record for OCPC ProjId {OCPCProjId}.", ocpcProjId);
+            }
         }
 
-        // === CON -> PhlInfo =======================================================
+        // CON -> PhlInfo
         var projCons = _OCOCContext.TblProjCons.AsNoTracking().Where(x => x.ProjId == ocpcProjId).ToList();
         foreach (var pcon in projCons)
         {
-            var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
-            var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
-            var conName = con?.Name ?? "Unknown Contractor";
+            try
+            {
+                using var conScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["ConId"] = pcon.ConId,
+                    ["PCNWProjId"] = pcnwProj.ProjId
+                });
 
-            UpsertPhlForProjCon(pcon, pcnwProj, beId, conName);
+                var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
+                var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
+                var conName = con?.Name ?? "Unknown Contractor";
+                UpsertPhlForProjCon(pcon, pcnwProj, beId, conName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed syncing Contractor record for OCPC ProjId {OCPCProjId}.", ocpcProjId);
+            }
+        }
 
-            // Optional: also create an Entity row for Issuing Office contractors etc.
-            // If you need that mapping, add an UpsertEntityForProjCon similar to AO.
+        _logger.LogInformation("Completed sync for OCPC ProjId {OCPCProjId}.", ocpcProjId);
+    }
+
+    public void BackfillAoEntityAndPhlForExistingSyncedProjects(IEnumerable<int>? onlyTheseOcpcProjIds = null)
+    {
+        var q = _PCNWContext.Projects.AsNoTracking().Where(p => p.SyncProId != null);
+
+        if (onlyTheseOcpcProjIds != null && onlyTheseOcpcProjIds.Any())
+        {
+            var set = onlyTheseOcpcProjIds.ToHashSet();
+            q = q.Where(p => set.Contains(p.SyncProId!.Value));
+        }
+
+        var destProjects = q
+            .Select(p => new { p.ProjId, p.ProjNumber, p.IsActive, p.SyncProId })
+            .ToList();
+
+        foreach (var dp in destProjects)
+        {
+            _logger.LogInformation("Starting backfill for PCNW ProjId {ProjId}, SyncProId {SyncProId}, ProjNumber {ProjNumber}",
+                dp.ProjId, dp.SyncProId, dp.ProjNumber);
+
+            try
+            {
+                // Load full project entity
+                var pcnwProj = _PCNWContext.Projects.First(p => p.ProjId == dp.ProjId);
+                var ocpcId = dp.SyncProId!.Value;
+
+                // ======================
+                // AO -> BusinessEntity
+                // ======================
+                _logger.LogInformation("Fetching ArchOwners (AO) for OCPC ProjId {OcpcId}", ocpcId);
+
+                var projAos = _OCOCContext.TblProjAos
+                    .AsNoTracking()
+                    .Where(x => x.ProjId == ocpcId)
+                    .ToList();
+
+                _logger.LogInformation("Found {AoCount} ArchOwners for OCPC ProjId {OcpcId}", projAos.Count, ocpcId);
+
+                foreach (var pao in projAos)
+                {
+                    var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
+                    var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
+                    var aoName = ao?.Name ?? "Unknown AO";
+
+                    _logger.LogDebug("Upserting Entity for AO {AoId} ({AoName}), mapped BE {BeId}, PCNW ProjId {ProjId}",
+                        pao.ArchOwnerId, aoName, beId, dp.ProjId);
+
+                    UpsertEntityForProjAo(pao, pcnwProj, beId, aoName);
+                }
+
+                // ======================
+                // CON -> PhlInfo
+                // ======================
+                _logger.LogInformation("Fetching Contractors (CON) for OCPC ProjId {OcpcId}", ocpcId);
+
+                var projCons = _OCOCContext.TblProjCons
+                    .AsNoTracking()
+                    .Where(x => x.ProjId == ocpcId)
+                    .ToList();
+
+                _logger.LogInformation("Found {ConCount} Contractors for OCPC ProjId {OcpcId}", projCons.Count, ocpcId);
+
+                foreach (var pcon in projCons)
+                {
+                    var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
+                    var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
+                    var conName = con?.Name ?? "Unknown Contractor";
+
+                    _logger.LogDebug("Upserting PHL for Contractor {ConId} ({ConName}), mapped BE {BeId}, PCNW ProjId {ProjId}",
+                        pcon.ConId, conName, beId, dp.ProjId);
+
+                    UpsertPhlForProjCon(pcon, pcnwProj, beId, conName);
+                }
+
+                _logger.LogInformation("Finished backfill for PCNW ProjId {ProjId}", dp.ProjId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Backfill failed for PCNW ProjId {ProjId}, SyncProId {SyncProId}", dp.ProjId, dp.SyncProId);
+            }
         }
     }
 

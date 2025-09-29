@@ -7,6 +7,7 @@ using Serilog;
 using SyncRoutineWS.OCPCModel;
 using SyncRoutineWS.PCNWModel;
 using System.Data;
+using System.Diagnostics.Metrics;
 using System.IO;
 using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
@@ -2143,7 +2144,7 @@ public class SyncController
 
         // 3) DB deletes (pure EF RemoveRange) — do it per project to keep memory low and to log per-project
         //    Everything in a single transaction for consistency.
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        
 
         // Recommended: process in batches of projects (e.g., 200) to avoid long transactions if delete set is huge
         const int projectBatchSize = 200;
@@ -2153,54 +2154,66 @@ public class SyncController
 
             foreach (var pid in batch)
             {
-                // Count first (for logging)
-                var counts = await CountChildrenAsync(db, pid, ct);
-
-                // Load + RemoveRange for each child table (pure EF)
-                // NOTE: If you know the entity keys, you can optimize by projecting keys and attaching stubs to delete.
-                // Here we ToListAsync() to keep it simple and safe.
-
-                var traffics = await db.ProjectTraffics.Where(x => x.ProjectId == pid).ToListAsync(ct);
-                db.ProjectTraffics.RemoveRange(traffics);
-
-                var counties = await db.ProjCounties.Where(x => x.ProjId == pid).ToListAsync(ct);
-                db.ProjCounties.RemoveRange(counties);
-
-                var entities = await db.Entities.Where(x => x.ProjId == pid).ToListAsync(ct);
-                db.Entities.RemoveRange(entities);
-
-                var phls = await db.PhlInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
-                db.PhlInfos.RemoveRange(phls);
-
-                var prebids = await db.PreBidInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
-                db.PreBidInfos.RemoveRange(prebids);
-
-                var estCosts = await db.EstCostDetails.Where(x => x.ProjId == pid).ToListAsync(ct);
-                db.EstCostDetails.RemoveRange(estCosts);
-
-                // Parent last
-                var project = await db.Projects.FirstOrDefaultAsync(p => p.ProjId == pid, ct);
-                if (project != null)
+                    await using var tx = await db.Database.BeginTransactionAsync(ct);
+                try
                 {
-                    db.Projects.Remove(project);
+                    // Count first (for logging)
+                    var counts = await CountChildrenAsync(db, pid, ct);
+
+                    // Load + RemoveRange for each child table (pure EF)
+                    // NOTE: If you know the entity keys, you can optimize by projecting keys and attaching stubs to delete.
+                    // Here we ToListAsync() to keep it simple and safe.
+
+                    var traffics = await db.ProjectTraffics.Where(x => x.ProjectId == pid).ToListAsync(ct);
+                    db.ProjectTraffics.RemoveRange(traffics);
+
+                    var counties = await db.ProjCounties.Where(x => x.ProjId == pid).ToListAsync(ct);
+                    db.ProjCounties.RemoveRange(counties);
+
+                    var entities = await db.Entities.Where(x => x.ProjId == pid).ToListAsync(ct);
+                    db.Entities.RemoveRange(entities);
+
+                    var phls = await db.PhlInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
+                    db.PhlInfos.RemoveRange(phls);
+
+                    var prebids = await db.PreBidInfos.Where(x => x.ProjId == pid).ToListAsync(ct);
+                    db.PreBidInfos.RemoveRange(prebids);
+
+                    var estCosts = await db.EstCostDetails.Where(x => x.ProjId == pid).ToListAsync(ct);
+                    db.EstCostDetails.RemoveRange(estCosts);
+
+                    // Parent last
+                    var project = await db.Projects.FirstOrDefaultAsync(p => p.ProjId == pid, ct);
+                    if (project != null)
+                    {
+                        db.Projects.Remove(project);
+                    }
+
+                    // Save per project (or per few projects) to avoid huge change tracker
+                    await db.SaveChangesAsync(ct);
+
+                    logger.LogInformation(
+                        "Deleted ProjId {ProjId}: ProjCounties={Cnt1}, Entities={Cnt2}, PhlInfos={Cnt3}, PreBidInfos={Cnt4}, EstCostDetails={Cnt5}, Project={ParentCnt}",
+                        pid,
+                        counts.ProjCounties,
+                        counts.Entities,
+                        counts.PhlInfos,
+                        counts.PreBidInfos,
+                        counts.EstCostDetails,
+                        project != null ? 1 : 0);
+
+                    await tx.CommitAsync(ct);
+
                 }
-
-                // Save per project (or per few projects) to avoid huge change tracker
-                await db.SaveChangesAsync(ct);
-
-                logger.LogInformation(
-                    "Deleted ProjId {ProjId}: ProjCounties={Cnt1}, Entities={Cnt2}, PhlInfos={Cnt3}, PreBidInfos={Cnt4}, EstCostDetails={Cnt5}, Project={ParentCnt}",
-                    pid,
-                    counts.ProjCounties,
-                    counts.Entities,
-                    counts.PhlInfos,
-                    counts.PreBidInfos,
-                    counts.EstCostDetails,
-                    project != null ? 1 : 0);
+                catch (Exception ex)
+                {
+                    await tx.RollbackAsync(ct);
+                    _logger.LogError(ex, "An error occurred in Deleting  ProjectId: {ProjectId}", pid);
+                }
             }
         }
 
-        await tx.CommitAsync(ct);
+       
 
         // 4) Filesystem cleanup (best-effort; non-fatal) — logs per project folder
         if (!string.IsNullOrWhiteSpace(_fileUploadPath) && Directory.Exists(_fileUploadPath))

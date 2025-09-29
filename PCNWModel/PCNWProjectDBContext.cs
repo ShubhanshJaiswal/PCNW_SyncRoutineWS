@@ -63,7 +63,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.IssueDt).HasColumnType("smalldatetime");
             entity.Property(e => e.MoreInfo).HasDefaultValue(false);
             entity.Property(e => e.MvwebPath)
-                .HasMaxLength(200)
+               // .HasMaxLength(200)
                 .HasColumnName("MVWebPath");
             entity.Property(e => e.NewBd)
                 .HasDefaultValue(false)
@@ -85,23 +85,23 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 
             entity.Property(e => e.AddressId).HasColumnName("AddressID");
             entity.Property(e => e.Addr1)
-                .HasMaxLength(255)
+               // .HasMaxLength(255)
                 .HasDefaultValue("");
             entity.Property(e => e.AddressName)
-                .HasMaxLength(20)
+               // .HasMaxLength(200)
                 .HasDefaultValue("");
             entity.Property(e => e.BusinessEntityId).HasColumnName("BusinessEntityID");
             entity.Property(e => e.City)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.State)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.SyncAoid).HasColumnName("SyncAOID");
             entity.Property(e => e.SyncConId).HasColumnName("SyncConID");
             entity.Property(e => e.SyncMemId).HasColumnName("SyncMemID");
             entity.Property(e => e.Zip)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
 
             entity.HasOne(d => d.BusinessEntity).WithMany(p => p.Addresses)
@@ -116,13 +116,13 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 
             entity.Property(e => e.BusinessEntityId).HasColumnName("BusinessEntityID");
             entity.Property(e => e.BusinessEntityEmail)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.BusinessEntityName)
-                .HasMaxLength(50)
+               // .HasMaxLength(500)
                 .HasDefaultValue("");
             entity.Property(e => e.BusinessEntityPhone)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.OldAoId).HasColumnName("OldAoID");
             entity.Property(e => e.OldConId).HasColumnName("OldConID");
@@ -155,17 +155,17 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.ContactCity).HasMaxLength(50);
             entity.Property(e => e.ContactCounty).HasMaxLength(50);
             entity.Property(e => e.ContactEmail)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.ContactName)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.ContactPhone)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.ContactState).HasMaxLength(50);
             entity.Property(e => e.ContactTitle)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.ContactZip).HasMaxLength(50);
             entity.Property(e => e.Extension).HasMaxLength(50);
@@ -173,7 +173,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.Password).HasMaxLength(128);
             entity.Property(e => e.SyncConId).HasColumnName("SyncConID");
             entity.Property(e => e.Uid)
-                .HasMaxLength(256)
+               // .HasMaxLength(256)
                 .HasColumnName("UID");
             entity.Property(e => e.UserId).HasDefaultValueSql("(newid())");
 
@@ -191,7 +191,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 
             entity.Property(e => e.CountyId).HasColumnName("CountyID");
             entity.Property(e => e.County1)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("County");
             entity.Property(e => e.State).HasMaxLength(2);
             entity.Property(e => e.SyncCouId).HasColumnName("SyncCouID");
@@ -206,12 +206,12 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.EntityId).HasColumnName("EntityID");
             entity.Property(e => e.ChkIssue).HasColumnName("chkIssue");
             entity.Property(e => e.CompType).HasDefaultValue(1);
-            entity.Property(e => e.EnityName)
-                .HasMaxLength(250)
-                .IsUnicode(false);
-            entity.Property(e => e.EntityType)
-                .HasMaxLength(250)
-                .IsUnicode(false);
+            entity.Property(e => e.EnityName);
+            // .HasMaxLength(500)
+            // .IsUnicode(false);
+            entity.Property(e => e.EntityType);
+               // .HasMaxLength(250)
+                // .IsUnicode(false);
             entity.Property(e => e.SyncProjAoid).HasColumnName("SyncProjAOId");
             entity.Property(e => e.SyncStatus).HasDefaultValue(1);
         });
@@ -220,18 +220,18 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
         {
             entity.HasKey(e => e.Id).HasName("PK__tblEstCo__3214EC07C8AA5F4D");
 
-            entity.Property(e => e.Description)
-                .HasMaxLength(500)
-                .IsUnicode(false);
-            entity.Property(e => e.EstCostFrom)
-                .HasMaxLength(100)
-                .IsUnicode(false);
-            entity.Property(e => e.EstCostTo)
-                .HasMaxLength(100)
-                .IsUnicode(false);
-            entity.Property(e => e.RangeSign)
-                .HasMaxLength(50)
-                .IsUnicode(false);
+            entity.Property(e => e.Description);
+            // .HasMaxLength(500)
+            // .IsUnicode(false);
+            entity.Property(e => e.EstCostFrom);
+            // .HasMaxLength(100)
+            // .IsUnicode(false);
+            entity.Property(e => e.EstCostTo);
+            // .HasMaxLength(100)
+            // .IsUnicode(false);
+            entity.Property(e => e.RangeSign);
+               // .HasMaxLength(50)
+                // .IsUnicode(false);
         });
 
         modelBuilder.Entity<Member>(entity =>
@@ -251,20 +251,20 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.BusinessEntityId).HasColumnName("BusinessEntityID");
             entity.Property(e => e.CalSort).HasMaxLength(50);
             entity.Property(e => e.Cod).HasColumnName("COD");
-            entity.Property(e => e.CompanyPhone)
-                .HasMaxLength(50)
-                .IsUnicode(false);
+            entity.Property(e => e.CompanyPhone);
+               // .HasMaxLength(50)
+                // .IsUnicode(false);
             entity.Property(e => e.ConId).HasColumnName("Con_ID");
             entity.Property(e => e.CreatedBy).HasMaxLength(200);
             entity.Property(e => e.Credits).HasColumnName("credits");
             entity.Property(e => e.DailyEmail)
-                .HasMaxLength(255)
+               // .HasMaxLength(255)
                 .HasColumnName("Daily_Email");
             entity.Property(e => e.Dba)
-                .HasMaxLength(100)
+               // .HasMaxLength(100)
                 .HasColumnName("DBA");
             entity.Property(e => e.Dba2)
-                .HasMaxLength(100)
+               // .HasMaxLength(100)
                 .HasColumnName("DBA2");
             entity.Property(e => e.Discipline).HasMaxLength(255);
             entity.Property(e => e.Discount).HasMaxLength(500);
@@ -273,18 +273,18 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.FavExp).HasColumnType("datetime");
             entity.Property(e => e.Fax).HasMaxLength(50);
             entity.Property(e => e.Fka)
-                .HasMaxLength(100)
+               // .HasMaxLength(100)
                 .HasColumnName("FKA");
             entity.Property(e => e.Gcservices).HasColumnName("GCservices");
             entity.Property(e => e.HowdUhearAboutUs)
-                .HasMaxLength(255)
+               // .HasMaxLength(255)
                 .HasColumnName("HowdUHearAboutUs");
             entity.Property(e => e.Html).HasColumnName("HTML");
             entity.Property(e => e.InsertDate)
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
             entity.Property(e => e.LastPayDate)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("");
             entity.Property(e => e.MagCost)
                 .HasColumnType("money")
@@ -303,31 +303,31 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.OverdueAmt).HasColumnType("money");
             entity.Property(e => e.OverdueDt).HasColumnType("datetime");
             entity.Property(e => e.PaperlessBilling)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Paperless_billing");
-            entity.Property(e => e.PayModeRef)
-                .HasMaxLength(100)
-                .IsUnicode(false);
+            entity.Property(e => e.PayModeRef);
+               // .HasMaxLength(100)
+                // .IsUnicode(false);
             entity.Property(e => e.Pdfpkg).HasColumnName("PDFPkg");
             entity.Property(e => e.Phl).HasColumnName("PHL");
             entity.Property(e => e.RenewalDate).HasColumnType("datetime");
             entity.Property(e => e.ResourceAdd)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Resource_Add");
             entity.Property(e => e.ResourceColor)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Resource_Color");
             entity.Property(e => e.ResourceCost)
                 .HasColumnType("money")
                 .HasColumnName("Resource_cost");
             entity.Property(e => e.ResourceDate)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Resource_date");
             entity.Property(e => e.ResourceLogo)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Resource_Logo");
             entity.Property(e => e.ResourceStandard)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("Resource_Standard");
             entity.Property(e => e.SuspendedDt).HasMaxLength(50);
             entity.Property(e => e.SyncMemId).HasColumnName("SyncMemID");
@@ -340,7 +340,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
                 .HasColumnType("money")
                 .HasColumnName("WebAd_cost");
             entity.Property(e => e.WebAdDate)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("WebAd_date");
         });
 
@@ -351,16 +351,16 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.ToTable("PreBidInfo");
 
             entity.Property(e => e.IsDeleted).HasDefaultValue(false);
-            entity.Property(e => e.Location)
-                .HasMaxLength(100)
-                .IsUnicode(false);
+            entity.Property(e => e.Location);
+               // .HasMaxLength(100)
+                // .IsUnicode(false);
             entity.Property(e => e.PreBidDate).HasColumnType("datetime");
-            entity.Property(e => e.PreBidTime)
-                .HasMaxLength(20)
-                .IsUnicode(false);
+            entity.Property(e => e.PreBidTime);
+               // .HasMaxLength(20)
+                // .IsUnicode(false);
             entity.Property(e => e.Pst)
-                .HasMaxLength(100)
-                .IsUnicode(false)
+               // .HasMaxLength(100)
+                // .IsUnicode(false)
                 .HasColumnName("PST");
         });
 
@@ -411,7 +411,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.AddendaNote).HasMaxLength(2000);
             entity.Property(e => e.ArrivalDt).HasColumnType("smalldatetime");
             entity.Property(e => e.BackProjNumber)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValueSql("((0))");
             entity.Property(e => e.BendPc)
                 .HasDefaultValue(false)
@@ -424,24 +424,24 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.BidDt5).HasColumnType("datetime");
             entity.Property(e => e.BidPkg).HasDefaultValue(false);
             entity.Property(e => e.Brnote)
-                .HasMaxLength(180)
+               // .HasMaxLength(180)
                 .HasColumnName("BRNote");
             entity.Property(e => e.BrresultsFrom)
-                .HasMaxLength(180)
+               // .HasMaxLength(180)
                 .HasColumnName("BRResultsFrom");
             entity.Property(e => e.BuildSolrIndex).HasDefaultValue(true);
             entity.Property(e => e.CallBack).HasDefaultValue(false);
             entity.Property(e => e.CheckSentDt).HasColumnType("smalldatetime");
             entity.Property(e => e.CompleteDt).HasMaxLength(150);
             entity.Property(e => e.Contact)
-                .HasMaxLength(50)
-                .IsUnicode(false)
+               // .HasMaxLength(50)
+                // .IsUnicode(false)
                 .IsFixedLength();
             entity.Property(e => e.CountyId)
                 .HasDefaultValue(0)
                 .HasColumnName("CountyID");
             entity.Property(e => e.CreatedBy)
-                .HasMaxLength(150)
+               // .HasMaxLength(150)
                 .HasColumnName("createdBy");
             entity.Property(e => e.CreatedDate)
                 .HasColumnType("datetime")
@@ -487,7 +487,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
             entity.Property(e => e.LocZip).HasMaxLength(10);
             entity.Property(e => e.Longitude).HasDefaultValue(0.0);
             entity.Property(e => e.MachineIp)
-                .HasMaxLength(250)
+               // .HasMaxLength(250)
                 .HasColumnName("machineIP");
             entity.Property(e => e.Mandatory).HasDefaultValue(false);
             entity.Property(e => e.Mandatory2).HasDefaultValue(false);
@@ -501,13 +501,13 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
                 .HasDefaultValue(false)
                 .HasColumnName("PHLdone");
             entity.Property(e => e.Phlnote)
-                .HasMaxLength(150)
+               // .HasMaxLength(150)
                 .HasColumnName("PHLnote");
             entity.Property(e => e.Phltimestamp)
                 .HasColumnType("datetime")
                 .HasColumnName("PHLtimestamp");
             entity.Property(e => e.PhlwebLink)
-                .HasMaxLength(150)
+               // .HasMaxLength(150)
                 .HasColumnName("PHLwebLink");
             entity.Property(e => e.PreBidDt).HasColumnType("datetime");
             entity.Property(e => e.PreBidDt2).HasColumnType("datetime");
@@ -528,9 +528,9 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
                 .HasColumnName("PrebidOR");
             entity.Property(e => e.PrevailingWage).HasDefaultValue(false);
             entity.Property(e => e.ProjNote).HasColumnType("ntext");
-            entity.Property(e => e.ProjNumber)
-                .HasMaxLength(50)
-                .IsUnicode(false);
+            entity.Property(e => e.ProjNumber);
+               // .HasMaxLength(50)
+                // .IsUnicode(false);
             entity.Property(e => e.ProjScope).HasMaxLength(250);
             entity.Property(e => e.ProjTimeStamp)
                 .IsRowVersion()
@@ -568,38 +568,38 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
                 .HasColumnType("ntext")
                 .HasColumnName("StoryUNF");
             entity.Property(e => e.StrAddenda)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasDefaultValue("")
                 .HasColumnName("strAddenda");
             entity.Property(e => e.StrBidDt)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strBidDt");
             entity.Property(e => e.StrBidDt2)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strBidDt2");
             entity.Property(e => e.StrBidDt3)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strBidDt3");
             entity.Property(e => e.StrBidDt4)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strBidDt4");
             entity.Property(e => e.StrBidDt5)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strBidDt5");
             entity.Property(e => e.StrPreBidDt)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strPreBidDt");
             entity.Property(e => e.StrPreBidDt2)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strPreBidDt2");
             entity.Property(e => e.StrPreBidDt3)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strPreBidDt3");
             entity.Property(e => e.StrPreBidDt4)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strPreBidDt4");
             entity.Property(e => e.StrPreBidDt5)
-                .HasMaxLength(30)
+               // .HasMaxLength(30)
                 .HasColumnName("strPreBidDt5");
             entity.Property(e => e.SubApprov).HasMaxLength(50);
             entity.Property(e => e.SyncProId).HasColumnName("SyncProID");
@@ -614,17 +614,17 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
                 .HasDefaultValue(false)
                 .HasColumnName("UCPublic");
             entity.Property(e => e.Ucpwd)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("UCPWD");
             entity.Property(e => e.Ucpwd2)
-                .HasMaxLength(50)
+               // .HasMaxLength(50)
                 .HasColumnName("UCPWD2");
-            entity.Property(e => e.Undecided)
-                .HasMaxLength(10)
-                .IsUnicode(false);
+            entity.Property(e => e.Undecided);
+               // .HasMaxLength(10)
+                // .IsUnicode(false);
             entity.Property(e => e.UnderCounter).HasDefaultValue(false);
             entity.Property(e => e.UpdatedBy)
-                .HasMaxLength(150)
+               // .HasMaxLength(150)
                 .HasColumnName("updatedBy");
             entity.Property(e => e.UpdatedDate)
                 .HasColumnType("datetime")

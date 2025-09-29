@@ -68,7 +68,7 @@ public class SyncController
             await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
             // 5) Data backfill / repair passes
-            BackfillAoEntityAndPhlForExistingSyncedProjects();
+            //BackfillAoEntityAndPhlForExistingSyncedProjects();
             FixMismatchedCountyAssignments();
 
             // ──────────────────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ public class SyncController
         _logger.LogInformation("Base directory verified: {BaseDirectory}", baseDirectory);
     }
 
-    private HashSet<long> GetSyncedProjectIds()
+    private HashSet<int> GetSyncedProjectIds()
     {
         var set = _PCNWContext.Projects
             .Where(p => p.SyncProId != null)
@@ -150,7 +150,7 @@ public class SyncController
         return set;
     }
 
-    private (List<TblProject> Projects, HashSet<long> ProjectIds) LoadProjectsForInitialSync(HashSet<long> syncedProjectIds, DateTime? cutoff)
+    private (List<TblProject> Projects, HashSet<int> ProjectIds) LoadProjectsForInitialSync(HashSet<int> syncedProjectIds, DateTime? cutoff)
     {
         // Pull minimal columns if needed; kept as your original for clarity.
         var allProjects = _OCOCContext.TblProjects.AsNoTracking().ToList();
@@ -166,7 +166,7 @@ public class SyncController
         return (filtered, ids);
     }
 
-    private List<TblProjCounty> LoadCountiesForProjects(HashSet<long> projIds)
+    private List<TblProjCounty> LoadCountiesForProjects(HashSet<int> projIds)
     {
         if (projIds.Count == 0) return new List<TblProjCounty>();
 
@@ -2607,6 +2607,7 @@ public class SyncController
 
     private int EnsureBusinessEntityForAo(int aoId)
     {
+        
         using var _ = _logger.BeginScope(new Dictionary<string, object>
         {
             ["AOId"] = aoId
@@ -2644,6 +2645,19 @@ public class SyncController
             SyncAoid = ao.Id
         };
         _PCNWContext.BusinessEntities.Add(be);
+        //var trackedCount = _PCNWContext.ChangeTracker.Entries().Count();
+
+        //// See how many are going to be inserted
+        //var toInsert = _PCNWContext.ChangeTracker.Entries()
+        //    .Where(e => e.State == EntityState.Added);
+
+        //// See how many are going to be updated
+        //var toUpdate = _PCNWContext.ChangeTracker.Entries()
+        //    .Where(e => e.State == EntityState.Modified);
+
+        //// See how many are going to be deleted
+        //var toDelete = _PCNWContext.ChangeTracker.Entries()
+        //    .Where(e => e.State == EntityState.Deleted);
         _PCNWContext.SaveChanges();
         _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for AO {AOId} ({Name}).", be.BusinessEntityId, ao.Id, ao.Name);
 
@@ -2752,6 +2766,20 @@ public class SyncController
                 SyncProjAoid = srcPao.ArchOwnerId
             };
             _PCNWContext.Entities.Add(entity);
+
+            //var trackedCount = _PCNWContext.ChangeTracker.Entries().Count();
+
+            //// See how many are going to be inserted
+            //var toInsert = _PCNWContext.ChangeTracker.Entries()
+            //    .Where(e => e.State == EntityState.Added);
+
+            //// See how many are going to be updated
+            //var toUpdate = _PCNWContext.ChangeTracker.Entries()
+            //    .Where(e => e.State == EntityState.Modified);
+
+            //// See how many are going to be deleted
+            //var toDelete = _PCNWContext.ChangeTracker.Entries()
+            //    .Where(e => e.State == EntityState.Deleted);
             _PCNWContext.SaveChanges();
 
             _logger.LogInformation("Inserted Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",

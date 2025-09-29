@@ -20,6 +20,7 @@ public partial class Entity
 
     public int CompType { get; set; }
 
+    public int? ConId { get; set; }
     public int SyncStatus { get; set; }
 
     public int? SyncProjConId { get; set; }

@@ -2727,6 +2727,7 @@ public class SyncController
                 ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : null,
                 IsActive = pcnwProj.IsActive,
                 NameId = beId,
+                ConId = AddDefaultContact(beId, 3),
                 ChkIssue = false,           // AO doesn’t issue plans; leave false
                 CompType = 3,               // 3 = Architect/Owner (per your pattern)
                 SyncStatus = 0,
@@ -2769,6 +2770,7 @@ public class SyncController
             {
                 ProjId = pcnwProj.ProjId,
                 MemId = beId,
+                ConId = AddDefaultContact(beId, 2),
                 Note = srcPcon.Note,
                 BidDate = bidDt,
                 tComp = hour,
@@ -2795,7 +2797,40 @@ public class SyncController
 
         _PCNWContext.SaveChanges();
     }
+    private int? AddDefaultContact(int id, int compType)
+    {
+        try
+        {
+            var IsOrgCompanyContact = _PCNWContext.BusinessEntities.FirstOrDefault(m => m.BusinessEntityId == id);
+            var contactName = "CompanyContact";
+            var contact = _PCNWContext.Contacts.FirstOrDefault(m => m.ContactName == contactName && m.BusinessEntityId == id);
+            if (contact is not null)
+            {
+                return contact.ContactId;
+            }
+            contact = new()
+            {
+                MainContact = false,
+                ContactName = contactName,
+                BusinessEntityId = id,
+                ContactEmail = IsOrgCompanyContact.BusinessEntityEmail,
+                CompType = (int)compType,
+                ContactPhone = IsOrgCompanyContact.BusinessEntityPhone,
+                Password = "",
+            };
 
+            _PCNWContext.Contacts.Add(contact);
+            var row = _PCNWContext.SaveChanges();
+
+            return contact.ContactId;
+        }
+        catch (Exception)
+        {
+            // Ideally log the  here
+        }
+
+        return null;
+    }
     public void SyncAoAndConForOcpcProject(int ocpcProjId)
     {
         // Find destination project

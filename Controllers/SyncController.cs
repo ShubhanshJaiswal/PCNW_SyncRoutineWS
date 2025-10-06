@@ -263,19 +263,20 @@ public class SyncController
             _logger.LogInformation("No county mismatches found.");
             return;
         }
+       var mismatchedHashSet = mismatched.ToHashSet();
 
         // Fetch from OCPC and apply update
         var mismatchedProjects = _OCOCContext.TblProjects
             .AsNoTracking()
-            .Where(p => mismatched.Contains(p.ProjId))
+            .Where(p => mismatchedHashSet.Contains(p.ProjId))
             .ToList();
 
         var mismatchedProjCounties = _OCOCContext.TblProjCounties
             .AsNoTracking()
-            .Where(c => mismatched.Contains(c.ProjId))
+            .Where(c => mismatchedHashSet.Contains(c.ProjId))
             .ToList();
 
-        _logger.LogInformation("Repairing {Count} projects with county mismatches.", mismatched.Count);
+        _logger.LogInformation("Repairing {Count} projects with county mismatches.", mismatchedHashSet.Count);
         UpdateProjectFunctionality(mismatchedProjects, mismatchedProjCounties);
     }
 
@@ -2755,6 +2756,7 @@ public class SyncController
             entity = new Entity
             {
                 EnityName = aoName,
+                EntityType=srcPao.AotypeId.ToString(),
                 ProjId = pcnwProj.ProjId,
                 ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : null,
                 IsActive = pcnwProj.IsActive,
@@ -2788,6 +2790,7 @@ public class SyncController
         else
         {
             entity.EnityName = aoName;
+            entity.EntityType = srcPao.AotypeId.ToString();
             entity.ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : entity.ProjNumber;
             entity.IsActive = pcnwProj.IsActive;
             entity.NameId = beId;

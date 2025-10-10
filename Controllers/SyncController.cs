@@ -12,6 +12,7 @@ using System.IO;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace SyncRoutineWS.Controllers;
 
@@ -68,7 +69,7 @@ public class SyncController
             await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
             // 5) Data backfill / repair passes
-            //BackfillAoEntityAndPhlForExistingSyncedProjects();
+            BackfillAoEntityAndPhlForExistingSyncedProjects();
             FixMismatchedCountyAssignments();
 
             // ──────────────────────────────────────────────────────────────────────────
@@ -2630,6 +2631,14 @@ public class SyncController
             throw new InvalidOperationException($"ArchOwner {aoId} not found in OCPC.");
         }
 
+        be = _PCNWContext.BusinessEntities.AsNoTracking().FirstOrDefault(x => x.BusinessEntityEmail == ao.Email && x.BusinessEntityName == ao.Name);
+        if (be != null)
+        {
+            _logger.LogInformation("BusinessEntity Name already exists for Contractor {ConId}: BE {BusinessEntityId}.", ao, be.BusinessEntityId);
+            UpdateArchitectInfo(ao, be.BusinessEntityId);
+            return be.BusinessEntityId;
+        }
+
         // Create BE
         be = new BusinessEntity
         {
@@ -2666,6 +2675,7 @@ public class SyncController
         var addr = new Address
         {
             BusinessEntityId = be.BusinessEntityId,
+            AddressName = "Main Address",
             Addr1 = ao.Addr1,
             City = ao.City,
             State = ao.State,
@@ -2702,6 +2712,14 @@ public class SyncController
             throw new InvalidOperationException($"Contractor {conId} not found in OCPC.");
         }
 
+        be = _PCNWContext.BusinessEntities.AsNoTracking().FirstOrDefault(x => x.BusinessEntityEmail == con.Email && x.BusinessEntityName==con.Name);
+        if (be != null)
+        {
+            _logger.LogInformation("BusinessEntity Name already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
+            UpdateContractorInfo(con, be.BusinessEntityId);
+            return be.BusinessEntityId;
+        }
+
         be = new BusinessEntity
         {
             BusinessEntityName = con.Name,
@@ -2723,6 +2741,7 @@ public class SyncController
         var addr = new Address
         {
             BusinessEntityId = be.BusinessEntityId,
+            AddressName = "Main Address",
             Addr1 = con.Addr1,
             City = con.City,
             State = con.State,
@@ -2736,6 +2755,110 @@ public class SyncController
 
         return be.BusinessEntityId;
     }
+
+
+    private void UpdateContractorInfo(TblContractor con,int BusinessEntityId)
+    {
+        var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == BusinessEntityId);
+        if (businessEntity != null)
+        {
+            businessEntity.BusinessEntityPhone = con.Phone;
+            businessEntity.IsMember = false;
+            businessEntity.IsContractor = true;
+            businessEntity.IsArchitect = false;
+            businessEntity.OldMemId = 0;
+            businessEntity.OldConId = con.Id;
+            businessEntity.OldAoId = 0;
+            businessEntity.SyncStatus = 0;
+            businessEntity.SyncConId = con.Id;
+            _PCNWContext.Update(businessEntity);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", businessEntity.BusinessEntityId, con.Id, con.Name);
+        }
+
+        var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == BusinessEntityId);
+        if (address != null)
+        {
+            address.AddressName = "Main Address";
+            address.SyncConId = con.Id;
+
+            _PCNWContext.Update(address);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", address.AddressId, businessEntity.BusinessEntityId, con.Id);
+        }
+        else
+        {
+            var addr = new Address
+            {
+                BusinessEntityId = BusinessEntityId,
+                AddressName = "Main Address",
+                Addr1 = con.Addr1,
+                City = con.City,
+                State = con.State,
+                Zip = con.Zip,
+                SyncStatus = 0,
+                SyncConId = con.Id
+            };
+            _PCNWContext.Addresses.Add(addr);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, businessEntity.BusinessEntityId, con.Id);
+
+        }
+    }
+
+
+    private void UpdateArchitectInfo(TblArchOwner arch, int BusinessEntityId)
+    {
+        var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == BusinessEntityId);
+        if (businessEntity != null)
+        {
+            businessEntity.BusinessEntityPhone = arch.Phone;
+            businessEntity.IsMember = false;
+            businessEntity.IsContractor = false;
+            businessEntity.IsArchitect = true;
+            businessEntity.OldMemId = 0;
+            businessEntity.OldConId = 0;
+            businessEntity.OldAoId = arch.Id;
+            businessEntity.SyncStatus = 0;
+            businessEntity.SyncConId = arch.Id;
+            _PCNWContext.Update(businessEntity);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Architect {ConId} ({Name}).", businessEntity.BusinessEntityId, arch.Id, arch.Name);
+        }
+
+        var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == BusinessEntityId);
+        if (address != null)
+        {
+            address.AddressName = "Main Address";
+            address.SyncAoid = arch.Id;
+
+            _PCNWContext.Update(address);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (Arch {ConId}).", address.AddressId, businessEntity.BusinessEntityId, arch.Id);
+        }
+            else
+            {
+                var addr = new Address
+                {
+                    BusinessEntityId = BusinessEntityId,
+                    AddressName = "Main Address",
+                    Addr1 = arch.Addr1,
+                    City = arch.City,
+                    State = arch.State,
+                    Zip = arch.Zip,
+                    SyncStatus = 0,
+                    SyncAoid = arch.Id
+                };
+                _PCNWContext.Addresses.Add(addr);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, BusinessEntityId, arch.Id);
+
+            }
+    }
+
+
+
+
     // === Upserts: TblProjAo -> Entity, TblProjCon -> PhlInfo =====================
 
     // === Upserts ===============================================================

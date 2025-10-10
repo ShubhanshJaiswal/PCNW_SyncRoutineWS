@@ -25,7 +25,7 @@ public class SyncController
     private readonly ILogger<SyncController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private UserManager<IdentityUser>? _userManager;
-    private readonly string _fileUploadPath; 
+    private readonly string _fileUploadPath;
     private readonly string _liveProjectsRoot;
     private readonly int _copyDegreeOfParallelism = 4;
 
@@ -69,7 +69,8 @@ public class SyncController
             await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
             // 5) Data backfill / repair passes
-            BackfillAoEntityAndPhlForExistingSyncedProjects();
+            //AddDefaultContact(18058, 3);
+            // BackfillAoEntityAndPhlForExistingSyncedProjects();
             FixMismatchedCountyAssignments();
 
             // ──────────────────────────────────────────────────────────────────────────
@@ -264,7 +265,7 @@ public class SyncController
             _logger.LogInformation("No county mismatches found.");
             return;
         }
-       var mismatchedHashSet = mismatched.ToHashSet();
+        var mismatchedHashSet = mismatched.ToHashSet();
 
         // Fetch from OCPC and apply update
         var mismatchedProjects = _OCOCContext.TblProjects
@@ -2175,7 +2176,7 @@ public class SyncController
 
         // 3) DB deletes (pure EF RemoveRange) — do it per project to keep memory low and to log per-project
         //    Everything in a single transaction for consistency.
-        
+
 
         // Recommended: process in batches of projects (e.g., 200) to avoid long transactions if delete set is huge
         const int projectBatchSize = 200;
@@ -2185,7 +2186,7 @@ public class SyncController
 
             foreach (var pid in batch)
             {
-                    await using var tx = await db.Database.BeginTransactionAsync(ct);
+                await using var tx = await db.Database.BeginTransactionAsync(ct);
                 try
                 {
                     // Count first (for logging)
@@ -2244,7 +2245,7 @@ public class SyncController
             }
         }
 
-       
+
 
         // 4) Filesystem cleanup (best-effort; non-fatal) — logs per project folder
         if (!string.IsNullOrWhiteSpace(_fileUploadPath) && Directory.Exists(_fileUploadPath))
@@ -2367,7 +2368,7 @@ public class SyncController
         var month = projNumber.Substring(2, 2);
         return Path.Combine(_fileUploadPath, year, month, projNumber);
     }
-  
+
 
     public async Task SyncFilesFromLiveToBetaAsync(CancellationToken ct = default)
     {
@@ -2393,8 +2394,8 @@ public class SyncController
                 .Select(p => new
                 {
                     p.ProjNumber,
-                    p.PlanNo,     
-                    p.Title,  
+                    p.PlanNo,
+                    p.Title,
                     p.SyncProId
                 })
                 .ToListAsync(ct);
@@ -2605,429 +2606,7 @@ public class SyncController
         }
     }
 
-    // === AO / CON -> BusinessEntity helpers =====================================
 
-    private int EnsureBusinessEntityForAo(int aoId)
-    {
-        
-        using var _ = _logger.BeginScope(new Dictionary<string, object>
-        {
-            ["AOId"] = aoId
-        });
-
-        // Already present?
-        var be = _PCNWContext.BusinessEntities.FirstOrDefault(x => x.SyncAoid == aoId);
-        if (be != null)
-        {
-            _logger.LogInformation("BusinessEntity already exists for AO {AOId}: BE {BusinessEntityId}.", aoId, be.BusinessEntityId);
-            return be.BusinessEntityId;
-        }
-
-        // Pull source AO
-        var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(x => x.Id == aoId);
-        if (ao == null)
-        {
-            _logger.LogWarning("ArchOwner {AOId} not found in OCPC.", aoId);
-            throw new InvalidOperationException($"ArchOwner {aoId} not found in OCPC.");
-        }
-
-        be = _PCNWContext.BusinessEntities.AsNoTracking().FirstOrDefault(x => x.BusinessEntityEmail == ao.Email && x.BusinessEntityName == ao.Name);
-        if (be != null)
-        {
-            _logger.LogInformation("BusinessEntity Name already exists for Contractor {ConId}: BE {BusinessEntityId}.", ao, be.BusinessEntityId);
-            UpdateArchitectInfo(ao, be.BusinessEntityId);
-            return be.BusinessEntityId;
-        }
-
-        // Create BE
-        be = new BusinessEntity
-        {
-            BusinessEntityName = ao.Name,
-            BusinessEntityEmail = ao.Email,
-            BusinessEntityPhone = ao.Phone,
-            IsMember = false,
-            IsContractor = false,
-            IsArchitect = true,
-            OldMemId = 0,
-            OldConId = 0,
-            OldAoId = ao.Id,
-            SyncStatus = 0,
-            SyncAoid = ao.Id
-        };
-        _PCNWContext.BusinessEntities.Add(be);
-        //var trackedCount = _PCNWContext.ChangeTracker.Entries().Count();
-
-        //// See how many are going to be inserted
-        //var toInsert = _PCNWContext.ChangeTracker.Entries()
-        //    .Where(e => e.State == EntityState.Added);
-
-        //// See how many are going to be updated
-        //var toUpdate = _PCNWContext.ChangeTracker.Entries()
-        //    .Where(e => e.State == EntityState.Modified);
-
-        //// See how many are going to be deleted
-        //var toDelete = _PCNWContext.ChangeTracker.Entries()
-        //    .Where(e => e.State == EntityState.Deleted);
-        _PCNWContext.SaveChanges();
-        _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for AO {AOId} ({Name}).", be.BusinessEntityId, ao.Id, ao.Name);
-
-        // Address
-        var addr = new Address
-        {
-            BusinessEntityId = be.BusinessEntityId,
-            AddressName = "Main Address",
-            Addr1 = ao.Addr1,
-            City = ao.City,
-            State = ao.State,
-            Zip = ao.Zip,
-            SyncStatus = 0,
-            SyncAoid = ao.Id
-        };
-        _PCNWContext.Addresses.Add(addr);
-        _PCNWContext.SaveChanges();
-        _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (AO {AOId}).", addr.AddressId, be.BusinessEntityId, ao.Id);
-
-        return be.BusinessEntityId;
-    }
-
-
-    private int EnsureBusinessEntityForCon(int conId)
-    {
-        using var _ = _logger.BeginScope(new Dictionary<string, object>
-        {
-            ["ConId"] = conId
-        });
-
-        var be = _PCNWContext.BusinessEntities.FirstOrDefault(x => x.SyncConId == conId);
-        if (be != null)
-        {
-            _logger.LogInformation("BusinessEntity already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
-            return be.BusinessEntityId;
-        }
-
-        var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(x => x.Id == conId);
-        if (con == null)
-        {
-            _logger.LogWarning("Contractor {ConId} not found in OCPC.", conId);
-            throw new InvalidOperationException($"Contractor {conId} not found in OCPC.");
-        }
-
-        be = _PCNWContext.BusinessEntities.AsNoTracking().FirstOrDefault(x => x.BusinessEntityEmail == con.Email && x.BusinessEntityName==con.Name);
-        if (be != null)
-        {
-            _logger.LogInformation("BusinessEntity Name already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
-            UpdateContractorInfo(con, be.BusinessEntityId);
-            return be.BusinessEntityId;
-        }
-
-        be = new BusinessEntity
-        {
-            BusinessEntityName = con.Name,
-            BusinessEntityEmail = con.Email,
-            BusinessEntityPhone = con.Phone,
-            IsMember = false,
-            IsContractor = true,
-            IsArchitect = false,
-            OldMemId = 0,
-            OldConId = con.Id,
-            OldAoId = 0,
-            SyncStatus = 0,
-            SyncConId = con.Id
-        };
-        _PCNWContext.BusinessEntities.Add(be);
-        _PCNWContext.SaveChanges();
-        _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", be.BusinessEntityId, con.Id, con.Name);
-
-        var addr = new Address
-        {
-            BusinessEntityId = be.BusinessEntityId,
-            AddressName = "Main Address",
-            Addr1 = con.Addr1,
-            City = con.City,
-            State = con.State,
-            Zip = con.Zip,
-            SyncStatus = 0,
-            SyncConId = con.Id
-        };
-        _PCNWContext.Addresses.Add(addr);
-        _PCNWContext.SaveChanges();
-        _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, be.BusinessEntityId, con.Id);
-
-        return be.BusinessEntityId;
-    }
-
-
-    private void UpdateContractorInfo(TblContractor con,int BusinessEntityId)
-    {
-        var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == BusinessEntityId);
-        if (businessEntity != null)
-        {
-            businessEntity.BusinessEntityPhone = con.Phone;
-            businessEntity.IsMember = false;
-            businessEntity.IsContractor = true;
-            businessEntity.IsArchitect = false;
-            businessEntity.OldMemId = 0;
-            businessEntity.OldConId = con.Id;
-            businessEntity.OldAoId = 0;
-            businessEntity.SyncStatus = 0;
-            businessEntity.SyncConId = con.Id;
-            _PCNWContext.Update(businessEntity);
-            _PCNWContext.SaveChanges();
-            _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", businessEntity.BusinessEntityId, con.Id, con.Name);
-        }
-
-        var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == BusinessEntityId);
-        if (address != null)
-        {
-            address.AddressName = "Main Address";
-            address.SyncConId = con.Id;
-
-            _PCNWContext.Update(address);
-            _PCNWContext.SaveChanges();
-            _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", address.AddressId, businessEntity.BusinessEntityId, con.Id);
-        }
-        else
-        {
-            var addr = new Address
-            {
-                BusinessEntityId = BusinessEntityId,
-                AddressName = "Main Address",
-                Addr1 = con.Addr1,
-                City = con.City,
-                State = con.State,
-                Zip = con.Zip,
-                SyncStatus = 0,
-                SyncConId = con.Id
-            };
-            _PCNWContext.Addresses.Add(addr);
-            _PCNWContext.SaveChanges();
-            _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, businessEntity.BusinessEntityId, con.Id);
-
-        }
-    }
-
-
-    private void UpdateArchitectInfo(TblArchOwner arch, int BusinessEntityId)
-    {
-        var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == BusinessEntityId);
-        if (businessEntity != null)
-        {
-            businessEntity.BusinessEntityPhone = arch.Phone;
-            businessEntity.IsMember = false;
-            businessEntity.IsContractor = false;
-            businessEntity.IsArchitect = true;
-            businessEntity.OldMemId = 0;
-            businessEntity.OldConId = 0;
-            businessEntity.OldAoId = arch.Id;
-            businessEntity.SyncStatus = 0;
-            businessEntity.SyncConId = arch.Id;
-            _PCNWContext.Update(businessEntity);
-            _PCNWContext.SaveChanges();
-            _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Architect {ConId} ({Name}).", businessEntity.BusinessEntityId, arch.Id, arch.Name);
-        }
-
-        var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == BusinessEntityId);
-        if (address != null)
-        {
-            address.AddressName = "Main Address";
-            address.SyncAoid = arch.Id;
-
-            _PCNWContext.Update(address);
-            _PCNWContext.SaveChanges();
-            _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (Arch {ConId}).", address.AddressId, businessEntity.BusinessEntityId, arch.Id);
-        }
-            else
-            {
-                var addr = new Address
-                {
-                    BusinessEntityId = BusinessEntityId,
-                    AddressName = "Main Address",
-                    Addr1 = arch.Addr1,
-                    City = arch.City,
-                    State = arch.State,
-                    Zip = arch.Zip,
-                    SyncStatus = 0,
-                    SyncAoid = arch.Id
-                };
-                _PCNWContext.Addresses.Add(addr);
-                _PCNWContext.SaveChanges();
-                _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, BusinessEntityId, arch.Id);
-
-            }
-    }
-
-
-
-
-    // === Upserts: TblProjAo -> Entity, TblProjCon -> PhlInfo =====================
-
-    // === Upserts ===============================================================
-
-    private void UpsertEntityForProjAo(TblProjAo srcPao, Project pcnwProj, int beId, string aoName)
-    {
-        using var _ = _logger.BeginScope(new Dictionary<string, object>
-        {
-            ["PCNWProjId"] = pcnwProj.ProjId,
-            ["OCPCProjId"] = srcPao.ProjId,
-            ["AOId"] = srcPao.ArchOwnerId
-        });
-
-        var entity = _PCNWContext.Entities.FirstOrDefault(e => e.SyncProjAoid == srcPao.ArchOwnerId && e.ProjId == pcnwProj.ProjId);
-
-        if (entity == null)
-        {
-            entity = new Entity
-            {
-                EnityName = aoName,
-                EntityType=srcPao.AotypeId.ToString(),
-                ProjId = pcnwProj.ProjId,
-                ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : null,
-                IsActive = pcnwProj.IsActive,
-                NameId = beId,
-                ConId = AddDefaultContact(beId, 3),
-                ChkIssue = false,
-                CompType = 3,
-                SyncStatus = 0,
-                SyncProjAoid = srcPao.ArchOwnerId
-            };
-            _PCNWContext.Entities.Add(entity);
-
-            //var trackedCount = _PCNWContext.ChangeTracker.Entries().Count();
-
-            //// See how many are going to be inserted
-            //var toInsert = _PCNWContext.ChangeTracker.Entries()
-            //    .Where(e => e.State == EntityState.Added);
-
-            //// See how many are going to be updated
-            //var toUpdate = _PCNWContext.ChangeTracker.Entries()
-            //    .Where(e => e.State == EntityState.Modified);
-
-            //// See how many are going to be deleted
-            //var toDelete = _PCNWContext.ChangeTracker.Entries()
-            //    .Where(e => e.State == EntityState.Deleted);
-            _PCNWContext.SaveChanges();
-
-            _logger.LogInformation("Inserted Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",
-                entity.EntityId, pcnwProj.ProjId, srcPao.ArchOwnerId, beId, aoName);
-        }
-        else
-        {
-            entity.EnityName = aoName;
-            entity.EntityType = srcPao.AotypeId.ToString();
-            entity.ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : entity.ProjNumber;
-            entity.IsActive = pcnwProj.IsActive;
-            entity.NameId = beId;
-            _PCNWContext.Update(entity);
-            _PCNWContext.SaveChanges();
-
-            _logger.LogInformation("Updated Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",
-                entity.EntityId, pcnwProj.ProjId, srcPao.ArchOwnerId, beId, aoName);
-        }
-    }
-    private void UpsertPhlForProjCon(TblProjCon srcPcon, Project pcnwProj, int beId, string conName)
-    {
-        using var _ = _logger.BeginScope(new Dictionary<string, object>
-        {
-            ["PCNWProjId"] = pcnwProj.ProjId,
-            ["OCPCProjId"] = srcPcon.ProjId,
-            ["ConId"] = srcPcon.ConId
-        });
-
-        var phl = _PCNWContext.PhlInfos
-            .FirstOrDefault(p => p.ProjId == pcnwProj.ProjId && p.ConId == beId);
-
-        // Break down BidDt into components
-        string? hour = null, minute = null, ampm = null;
-        DateTime? bidDt = srcPcon.TimeStamp;
-        if (bidDt.HasValue)
-        {
-            hour = bidDt.Value.ToString("hh");
-            minute = bidDt.Value.ToString("mm");
-            ampm = bidDt.Value.ToString("tt");
-        }
-        var bidStatus = srcPcon.Bidding == true ? 1 : srcPcon.NotBidding == true ? 2 : srcPcon.Lm == true ? 3 : 0;
-
-        if (phl == null)
-        {
-            phl = new PhlInfo
-            {
-                ProjId = pcnwProj.ProjId,
-                MemId = beId,
-                ConId = AddDefaultContact(beId, 2),
-                Note = srcPcon.Note,
-                BidDate = bidDt,
-                tComp = hour,
-                hComp = minute,
-                mValue = ampm,
-                BidStatus = bidStatus,
-                IsActive = true,
-                CompType = 2,
-                PhlType = srcPcon.ConTypeId,
-                PST = "PT"
-            };
-            _PCNWContext.PhlInfos.Add(phl);
-            _PCNWContext.SaveChanges();
-
-            _logger.LogInformation("Inserted PhlInfo {PhlInfoId} for Proj {ProjId} (Con BE {BEId}, Name '{ConName}', BidDate {BidDate} {Hour}:{Minute} {AMPM}, Status {Status}).",
-                phl.Id, pcnwProj.ProjId, beId, conName, bidDt, hour, minute, ampm, bidStatus);
-        }
-        else
-        {
-            phl.Note = srcPcon.Note ?? phl.Note;
-            phl.BidDate = bidDt ?? phl.BidDate;
-            phl.tComp = hour ?? phl.tComp;
-            phl.hComp = minute ?? phl.hComp;
-            phl.mValue = ampm ?? phl.mValue;
-            phl.PhlType = srcPcon.ConTypeId ?? phl.PhlType;
-            _PCNWContext.Update(phl);
-            _PCNWContext.SaveChanges();
-
-            _logger.LogInformation("Updated PhlInfo {PhlInfoId} for Proj {ProjId} (Con BE {BEId}, Name '{ConName}', BidDate {BidDate} {Hour}:{Minute} {AMPM}, Status {Status}).",
-                phl.Id, pcnwProj.ProjId, beId, conName, phl.BidDate, phl.tComp, phl.hComp, phl.mValue, phl.BidStatus);
-        }
-    }
-    private int? AddDefaultContact(int id, int compType)
-    {
-        using var _ = _logger.BeginScope(new Dictionary<string, object>
-        {
-            ["BusinessEntityId"] = id,
-            ["CompType"] = compType
-        });
-
-        try
-        {
-            var be = _PCNWContext.BusinessEntities.FirstOrDefault(m => m.BusinessEntityId == id);
-            var contactName = "CompanyContact";
-            var contact = _PCNWContext.Contacts.FirstOrDefault(m => m.ContactName == contactName && m.BusinessEntityId == id);
-            if (contact is not null)
-            {
-                _logger.LogInformation("Default contact already exists: ContactId {ContactId} for BE {BusinessEntityId}.", contact.ContactId, id);
-                return contact.ContactId;
-            }
-
-            contact = new()
-            {
-                MainContact = false,
-                ContactName = contactName,
-                BusinessEntityId = id,
-                ContactEmail = be?.BusinessEntityEmail,
-                CompType = compType,
-                ContactPhone = be?.BusinessEntityPhone,
-                Password = "",
-            };
-
-            _PCNWContext.Contacts.Add(contact);
-            _PCNWContext.SaveChanges();
-
-            _logger.LogInformation("Created default contact {ContactId} for BE {BusinessEntityId}.", contact.ContactId, id);
-            return contact.ContactId;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to add/find default contact for BE {BusinessEntityId}.", id);
-            return null;
-        }
-    }
 
     public void SyncAoAndConForOcpcProject(int ocpcProjId)
     {
@@ -3047,6 +2626,14 @@ public class SyncController
 
         // AO -> Entity
         var projAos = _OCOCContext.TblProjAos.AsNoTracking().Where(x => x.ProjId == ocpcProjId).ToList();
+
+        if (projAos.Count > 0)
+        {
+            var existingentities = _PCNWContext.Entities
+                         .Where(p => p.ProjId == pcnwProj.ProjId).ToList();
+            _PCNWContext.Entities.RemoveRange(existingentities);
+            _PCNWContext.SaveChanges();
+        }
         foreach (var pao in projAos)
         {
             try
@@ -3070,6 +2657,13 @@ public class SyncController
 
         // CON -> PhlInfo
         var projCons = _OCOCContext.TblProjCons.AsNoTracking().Where(x => x.ProjId == ocpcProjId).ToList();
+        if (projCons.Count > 0)
+        {
+            var existingPhls = _PCNWContext.PhlInfos
+                         .Where(p => p.ProjId == pcnwProj.ProjId).ToList();
+            _PCNWContext.PhlInfos.RemoveRange(existingPhls);
+            _PCNWContext.SaveChanges();
+        }
         foreach (var pcon in projCons)
         {
             try
@@ -3093,7 +2687,507 @@ public class SyncController
 
         _logger.LogInformation("Completed sync for OCPC ProjId {OCPCProjId}.", ocpcProjId);
     }
+    private static SqlParameter ToIntTvp(string name, IEnumerable<int> values)
+    {
+        var table = new DataTable();
+        table.Columns.Add("Value", typeof(int));
+        foreach (var v in values)
+            table.Rows.Add(v);
 
+        return new SqlParameter(name, SqlDbType.Structured)
+        {
+            TypeName = "dbo.IntList",  // must match the type you created in SQL Server
+            Value = table
+        };
+    }
+
+
+    private static string Norm(string? s) => (s ?? string.Empty).Trim();
+
+    private T SafeGet<T>(Func<T> func, string step, object scope, Microsoft.Extensions.Logging.ILogger logger) where T : class
+    {
+        try { return func(); }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed during {Step}. Scope: {@Scope}", step, scope);
+            throw;
+        }
+    }
+    private int EnsureBusinessEntityForAo(int aoId)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["AOId"] = aoId });
+
+        try
+        {
+            // Already present (by SyncAoid)
+            var be = _PCNWContext.BusinessEntities
+                .AsNoTracking()
+                .FirstOrDefault(x => x.SyncAoid == aoId);
+
+            if (be != null)
+            {
+                _logger.LogInformation("BusinessEntity already exists for AO {AOId}: BE {BusinessEntityId}.", aoId, be.BusinessEntityId);
+                return be.BusinessEntityId;
+            }
+
+            // Source AO
+            var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(x => x.Id == aoId);
+            if (ao == null)
+            {
+                _logger.LogWarning("ArchOwner {AOId} not found in OCPC.", aoId);
+                throw new InvalidOperationException($"ArchOwner {aoId} not found in OCPC.");
+            }
+
+            var aoName = ao.Name ?? string.Empty;
+            var aoNameTrim = aoName.Trim();
+            var aoNameLower = aoNameTrim.ToLower();  // EF translates ToLower()
+
+            be = _PCNWContext.BusinessEntities
+                .AsNoTracking()
+                .FirstOrDefault(x =>
+                    x.BusinessEntityName != null && (
+                        x.BusinessEntityName == aoNameTrim
+                        || x.BusinessEntityName.Trim() == aoNameTrim
+                        || x.BusinessEntityName.ToLower() == aoNameLower
+                        || x.BusinessEntityName.Trim().ToLower() == aoNameLower
+                    )
+                );
+
+            if (be != null)
+            {
+                _logger.LogInformation("BusinessEntity Name already exists for AO {AOId}: BE {BusinessEntityId}.", aoId, be.BusinessEntityId);
+                UpdateArchitectInfo(ao, be.BusinessEntityId);
+                return be.BusinessEntityId;
+            }
+
+            // Create BE
+            be = new BusinessEntity
+            {
+                BusinessEntityName = aoName,
+                BusinessEntityEmail = ao.Email,
+                BusinessEntityPhone = ao.Phone,
+                IsMember = false,
+                IsContractor = false,
+                IsArchitect = true,
+                OldMemId = 0,
+                OldConId = 0,
+                OldAoId = ao.Id,
+                SyncStatus = 0,
+                SyncAoid = ao.Id
+            };
+
+            _PCNWContext.BusinessEntities.Add(be);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for AO {AOId} ({Name}).", be.BusinessEntityId, ao.Id, aoName);
+
+            // Address (create main if missing)
+            var addr = new Address
+            {
+                BusinessEntityId = be.BusinessEntityId,
+                AddressName = "Main Address",
+                Addr1 = ao.Addr1,
+                City = ao.City,
+                State = ao.State,
+                Zip = ao.Zip,
+                SyncStatus = 0,
+                SyncAoid = ao.Id
+            };
+            _PCNWContext.Addresses.Add(addr);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (AO {AOId}).", addr.AddressId, be.BusinessEntityId, ao.Id);
+
+            return be.BusinessEntityId;
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in EnsureBusinessEntityForAo for AO {AOId}.", aoId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in EnsureBusinessEntityForAo for AO {AOId}.", aoId);
+            throw;
+        }
+    }
+    private int EnsureBusinessEntityForCon(int conId)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["ConId"] = conId });
+
+        try
+        {
+            var be = _PCNWContext.BusinessEntities.AsNoTracking().FirstOrDefault(x => x.SyncConId == conId);
+            if (be != null)
+            {
+                _logger.LogInformation("BusinessEntity already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
+                return be.BusinessEntityId;
+            }
+
+            var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(x => x.Id == conId);
+            if (con == null)
+            {
+                _logger.LogWarning("Contractor {ConId} not found in OCPC.", conId);
+                throw new InvalidOperationException($"Contractor {conId} not found in OCPC.");
+            }
+
+            var conName = con.Name ?? string.Empty;
+            var conNameTrim = conName.Trim();
+            var conNameLower = conNameTrim.ToLower();
+
+            be = _PCNWContext.BusinessEntities
+                .AsNoTracking()
+                .FirstOrDefault(x =>
+                    x.BusinessEntityName != null && (
+                        x.BusinessEntityName == conNameTrim
+                        || x.BusinessEntityName.Trim() == conNameTrim
+                        || x.BusinessEntityName.ToLower() == conNameLower
+                        || x.BusinessEntityName.Trim().ToLower() == conNameLower
+                    )
+                );
+
+            if (be != null)
+            {
+                _logger.LogInformation("BusinessEntity Name already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
+                UpdateContractorInfo(con, be.BusinessEntityId);
+                return be.BusinessEntityId;
+            }
+
+            be = new BusinessEntity
+            {
+                BusinessEntityName = conName,
+                BusinessEntityEmail = con.Email,
+                BusinessEntityPhone = con.Phone,
+                IsMember = false,
+                IsContractor = true,
+                IsArchitect = false,
+                OldMemId = 0,
+                OldConId = con.Id,
+                OldAoId = 0,
+                SyncStatus = 0,
+                SyncConId = con.Id
+            };
+            _PCNWContext.BusinessEntities.Add(be);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Created BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", be.BusinessEntityId, con.Id, conName);
+
+            var addr = new Address
+            {
+                BusinessEntityId = be.BusinessEntityId,
+                AddressName = "Main Address",
+                Addr1 = con.Addr1,
+                City = con.City,
+                State = con.State,
+                Zip = con.Zip,
+                SyncStatus = 0,
+                SyncConId = con.Id
+            };
+            _PCNWContext.Addresses.Add(addr);
+            _PCNWContext.SaveChanges();
+            _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, be.BusinessEntityId, con.Id);
+
+            return be.BusinessEntityId;
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in EnsureBusinessEntityForCon for Con {ConId}.", conId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in EnsureBusinessEntityForCon for Con {ConId}.", conId);
+            throw;
+        }
+    }
+    private void UpdateContractorInfo(TblContractor con, int businessEntityId)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["ConId"] = con.Id, ["BusinessEntityId"] = businessEntityId });
+
+        try
+        {
+            var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == businessEntityId);
+            if (businessEntity != null)
+            {
+                businessEntity.BusinessEntityPhone = con.Phone;
+                businessEntity.BusinessEntityEmail = con.Email;
+                businessEntity.IsMember = false;
+                businessEntity.IsContractor = true;
+                businessEntity.IsArchitect = false;
+                businessEntity.OldMemId = 0;
+                businessEntity.OldConId = con.Id;
+                businessEntity.OldAoId = 0;
+                businessEntity.SyncStatus = 0;
+                businessEntity.SyncConId = con.Id;
+
+                _PCNWContext.Update(businessEntity);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Contractor {ConId} ({Name}).", businessEntity.BusinessEntityId, con.Id, con.Name);
+            }
+
+            var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == businessEntityId);
+            if (address != null)
+            {
+                address.AddressName = "Main Address";
+                address.Addr1 = con.Addr1 ?? "";
+                address.City = con.City ?? "";
+                address.State = con.State ?? "";
+                address.Zip = con.Zip ?? "";
+                address.SyncConId = con.Id;
+
+                _PCNWContext.Update(address);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", address.AddressId, businessEntityId, con.Id);
+            }
+            else
+            {
+                var addr = new Address
+                {
+                    BusinessEntityId = businessEntityId,
+                    AddressName = "Main Address",
+                    Addr1 = con.Addr1 ?? "",
+                    City = con.City ?? "",
+                    State = con.State,
+                    Zip = con.Zip ?? "",
+                    SyncStatus = 0,
+                    SyncConId = con.Id
+                };
+                _PCNWContext.Addresses.Add(addr);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (Con {ConId}).", addr.AddressId, businessEntityId, con.Id);
+            }
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in UpdateContractorInfo for BE {BusinessEntityId}, Con {ConId}.", businessEntityId, con.Id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in UpdateContractorInfo for BE {BusinessEntityId}, Con {ConId}.", businessEntityId, con.Id);
+            throw;
+        }
+    }
+    private void UpdateArchitectInfo(TblArchOwner arch, int businessEntityId)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["AOId"] = arch.Id, ["BusinessEntityId"] = businessEntityId });
+
+        try
+        {
+            var businessEntity = _PCNWContext.BusinessEntities.FirstOrDefault(b => b.BusinessEntityId == businessEntityId);
+            if (businessEntity != null)
+            {
+                businessEntity.BusinessEntityPhone = arch.Phone;
+                businessEntity.BusinessEntityEmail = arch.Email;
+                businessEntity.IsMember = false;
+                businessEntity.IsContractor = false;
+                businessEntity.IsArchitect = true;
+                businessEntity.OldMemId = 0;
+                businessEntity.OldConId = 0;
+                businessEntity.OldAoId = arch.Id;
+                businessEntity.SyncStatus = 0;
+                businessEntity.SyncAoid = arch.Id; // BUG FIX: was SyncConId
+
+                _PCNWContext.Update(businessEntity);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Updated BusinessEntity {BusinessEntityId} for Architect {AOId} ({Name}).", businessEntity.BusinessEntityId, arch.Id, arch.Name);
+            }
+
+            var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == businessEntityId);
+            if (address != null)
+            {
+                address.AddressName = "Main Address";
+                address.Addr1 = arch.Addr1 ?? "";
+                address.City = arch.City ?? "";
+                address.State = arch.State ?? "";
+                address.Zip = arch.Zip ?? "";
+                address.SyncAoid = arch.Id;
+
+                _PCNWContext.Update(address);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Updated Address {AddressId} for BE {BusinessEntityId} (AO {AOId}).", address.AddressId, businessEntityId, arch.Id);
+            }
+            else
+            {
+                var addr = new Address
+                {
+                    BusinessEntityId = businessEntityId,
+                    AddressName = "Main Address",
+                    Addr1 = arch.Addr1 ?? "",
+                    City = arch.City ?? "" ?? "",
+                    State = arch.State,
+                    Zip = arch.Zip ?? "",
+                    SyncStatus = 0,
+                    SyncAoid = arch.Id
+                };
+                _PCNWContext.Addresses.Add(addr);
+                _PCNWContext.SaveChanges();
+                _logger.LogInformation("Created Address {AddressId} for BE {BusinessEntityId} (AO {AOId}).", addr.AddressId, businessEntityId, arch.Id);
+            }
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in UpdateArchitectInfo for BE {BusinessEntityId}, AO {AOId}.", businessEntityId, arch.Id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in UpdateArchitectInfo for BE {BusinessEntityId}, AO {AOId}.", businessEntityId, arch.Id);
+            throw;
+        }
+    }
+    private void UpsertEntityForProjAo(TblProjAo srcPao, Project pcnwProj, int beId, string aoName)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["PCNWProjId"] = pcnwProj.ProjId,
+            ["OCPCProjId"] = srcPao.ProjId,
+            ["AOId"] = srcPao.ArchOwnerId
+        });
+
+        try
+        {
+            var entity = new Entity
+            {
+                EnityName = aoName,
+                EntityType = srcPao.AotypeId.ToString(),
+                ProjId = pcnwProj.ProjId,
+                ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : (int?)null,
+                IsActive = pcnwProj.IsActive,
+                NameId = beId,
+                ConId = AddDefaultContact(beId, 3),
+                ChkIssue = false,
+                CompType = 3,
+                SyncStatus = 0,
+                SyncProjAoid = srcPao.ArchOwnerId
+            };
+
+            // IMPORTANT: never set EntityId; let identity generate
+            _PCNWContext.Entities.Add(entity);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Inserted Entity {EntityId} for Proj {ProjId} (AO {AOId}, BE {BEId}, Name '{Name}').",
+                entity.EntityId, pcnwProj.ProjId, srcPao.ArchOwnerId, beId, aoName);
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in UpsertEntityForProjAo for Proj {ProjId}, AO {AOId}, BE {BEId}.",
+                pcnwProj.ProjId, srcPao.ArchOwnerId, beId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in UpsertEntityForProjAo for Proj {ProjId}, AO {AOId}, BE {BEId}.",
+                pcnwProj.ProjId, srcPao.ArchOwnerId, beId);
+            throw;
+        }
+    }
+    private void UpsertPhlForProjCon(TblProjCon pcon, Project pcnwProj, int beId, string conName)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["PCNWProjId"] = pcnwProj.ProjId,
+            ["OCPCProjId"] = pcon.ProjId,
+            ["ConId"] = pcon.ConId
+        });
+
+        try
+        {
+            DateTime? bidDt = pcon.TimeStamp;
+            var hour = bidDt?.ToString("hh");
+            var minute = bidDt?.ToString("mm");
+            var ampm = bidDt?.ToString("tt");
+
+            var bidStatus = pcon.Bidding == true ? 1 :
+                            pcon.NotBidding == true ? 2 :
+                            pcon.Lm == true ? 3 : 0;
+
+            var phl = new PhlInfo
+            {
+                ProjId = pcnwProj.ProjId,
+                MemId = beId,
+                ConId = AddDefaultContact(beId, 2),
+                Note = pcon.Note,
+                BidDate = bidDt,
+                tComp = hour,
+                hComp = minute,
+                mValue = ampm,
+                BidStatus = bidStatus,
+                IsActive = true,
+                CompType = 2,
+                PhlType = pcon.ConTypeId,
+                PST = "PT"
+            };
+
+            // IMPORTANT: never set Id; let identity generate
+            _PCNWContext.PhlInfos.Add(phl);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Inserted PhlInfo {PhlInfoId} for Proj {ProjId} (Con BE {BEId},  Status {Status}).",
+                phl.Id, pcnwProj.ProjId, beId);
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error in UpsertPhlForProjCon for Proj {ProjId}, ConId {ConId}, BE {BEId}.",
+                pcnwProj.ProjId, pcon.ConId, beId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error in UpsertPhlForProjCon for Proj {ProjId}, ConId {ConId}, BE {BEId}.",
+                pcnwProj.ProjId, pcon.ConId, beId);
+            throw;
+        }
+    }
+    private int AddDefaultContact(int businessEntityId, int compType)
+    {
+        using var scope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            ["BusinessEntityId"] = businessEntityId,
+            ["CompType"] = compType
+        });
+
+        try
+        {
+            const string contactName = "CompanyContact";
+            var contact = _PCNWContext.Contacts.AsNoTracking()
+                .FirstOrDefault(m => m.ContactName == contactName && m.BusinessEntityId == businessEntityId);
+
+            if (contact is not null)
+            {
+                _logger.LogInformation("Default contact already exists: ContactId {ContactId} for BE {BusinessEntityId}.",
+                    contact.ContactId, businessEntityId);
+                return contact.ContactId;
+            }
+
+            var be = _PCNWContext.BusinessEntities.AsNoTracking()
+                .FirstOrDefault(m => m.BusinessEntityId == businessEntityId);
+
+            var newContact = new Contact
+            {
+                MainContact = false,
+                ContactName = contactName,
+                BusinessEntityId = businessEntityId,
+                ContactEmail = be?.BusinessEntityEmail,
+                CompType = compType,
+                ContactPhone = be?.BusinessEntityPhone,
+                Password = ""
+            };
+
+            _PCNWContext.Contacts.Add(newContact);
+            _PCNWContext.SaveChanges();
+
+            _logger.LogInformation("Created default contact {ContactId} for BE {BusinessEntityId}.", newContact.ContactId, businessEntityId);
+            return newContact.ContactId;
+        }
+        catch (DbUpdateException dbx)
+        {
+            _logger.LogError(dbx, "DB error creating default contact for BE {BusinessEntityId}.", businessEntityId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled error creating default contact for BE {BusinessEntityId}.", businessEntityId);
+            throw;
+        }
+    }
     public void BackfillAoEntityAndPhlForExistingSyncedProjects(IEnumerable<int>? onlyTheseOcpcProjIds = null)
     {
         var q = _PCNWContext.Projects.AsNoTracking().Where(p => p.SyncProId != null);
@@ -3110,86 +3204,123 @@ public class SyncController
 
         foreach (var dp in destProjects)
         {
-            _logger.LogInformation("Starting backfill for PCNW ProjId {ProjId}, SyncProId {SyncProId}, ProjNumber {ProjNumber}",
+            using var _ = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["PCNWProjId"] = dp.ProjId,
+                ["SyncProId"] = dp.SyncProId
+            });
+
+            _logger.LogInformation("Starting replace for PCNW ProjId {ProjId}, SyncProId {SyncProId}, ProjNumber {ProjNumber}",
                 dp.ProjId, dp.SyncProId, dp.ProjNumber);
 
             try
             {
-                // Load full project entity
-                var pcnwProj = _PCNWContext.Projects.First(p => p.ProjId == dp.ProjId);
+                var pcnwProj = _PCNWContext.Projects.AsNoTracking().First(p => p.ProjId == dp.ProjId);
                 var ocpcId = dp.SyncProId!.Value;
 
-                // ======================
-                // AO -> BusinessEntity
-                // ======================
-                _logger.LogInformation("Fetching ArchOwners (AO) for OCPC ProjId {OcpcId}", ocpcId);
-
+                // Source pulls (read-only)
                 var projAos = _OCOCContext.TblProjAos
                     .AsNoTracking()
                     .Where(x => x.ProjId == ocpcId)
                     .ToList();
-
-                _logger.LogInformation("Found {AoCount} ArchOwners for OCPC ProjId {OcpcId}", projAos.Count, ocpcId);
-
-                foreach (var pao in projAos)
-                {
-                    var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
-                    var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
-                    var aoName = ao?.Name ?? "Unknown AO";
-
-                    _logger.LogDebug("Upserting Entity for AO {AoId} ({AoName}), mapped BE {BeId}, PCNW ProjId {ProjId}",
-                        pao.ArchOwnerId, aoName, beId, dp.ProjId);
-
-                    UpsertEntityForProjAo(pao, pcnwProj, beId, aoName);
-                }
-
-                // ======================
-                // CON -> PhlInfo
-                // ======================
-                _logger.LogInformation("Fetching Contractors (CON) for OCPC ProjId {OcpcId}", ocpcId);
 
                 var projCons = _OCOCContext.TblProjCons
                     .AsNoTracking()
                     .Where(x => x.ProjId == ocpcId)
                     .ToList();
 
-                _logger.LogInformation("Found {ConCount} Contractors for OCPC ProjId {OcpcId}", projCons.Count, ocpcId);
+                using var tx = _PCNWContext.Database.BeginTransaction();
 
-                foreach (var pcon in projCons)
+                try
                 {
-                    var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
-                    var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
-                    var conName = con?.Name ?? "Unknown Contractor";
+                    // 1) Delete existing rows for this project (PHL first, then Entity)
+#if EFCORE7_OR_LATER
+                _PCNWContext.PhlInfos.Where(p => p.ProjId == dp.ProjId).ExecuteDelete();
+                _PCNWContext.Entities.Where(e => e.ProjId == dp.ProjId).ExecuteDelete();
+#else
+                    var delPhls = _PCNWContext.PhlInfos.Where(p => p.ProjId == dp.ProjId).ToList();
+                    if (delPhls.Count > 0)
+                    {
+                        _PCNWContext.PhlInfos.RemoveRange(delPhls);
+                        _PCNWContext.SaveChanges();
+                    }
 
-                    _logger.LogDebug("Upserting PHL for Contractor {ConId} ({ConName}), mapped BE {BeId}, PCNW ProjId {ProjId}",
-                        pcon.ConId, conName, beId, dp.ProjId);
+                    var delEntities = _PCNWContext.Entities.Where(e => e.ProjId == dp.ProjId).ToList();
+                    if (delEntities.Count > 0)
+                    {
+                        _PCNWContext.Entities.RemoveRange(delEntities);
+                        _PCNWContext.SaveChanges();
+                    }
+#endif
+                    _logger.LogInformation("Cleared Entities/PhlInfos for Proj {ProjId}.", dp.ProjId);
 
-                    UpsertPhlForProjCon(pcon, pcnwProj, beId, conName);
+                    // 2) Rebuild ENTITIES from AOs
+                    foreach (var pao in projAos)
+                    {
+                        try
+                        {
+                            var ao = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(a => a.Id == pao.ArchOwnerId);
+                            var aoNameRaw = ao?.Name ?? "Unknown AO";
+                            var aoNameTrim = aoNameRaw.Trim();
+
+                            var beId = EnsureBusinessEntityForAo(pao.ArchOwnerId ?? 0);
+
+                            UpsertEntityForProjAo(pao, pcnwProj, beId, aoNameRaw);
+                        }
+                        catch (DbUpdateException dbxAo)
+                        {
+                            _logger.LogError(dbxAo, "DB error inserting Entity for AO {AOId} in Proj {ProjId}.", pao.ArchOwnerId, dp.ProjId);
+                            throw;
+                        }
+                        catch (Exception exAo)
+                        {
+                            _logger.LogError(exAo, "Unhandled error inserting Entity for AO {AOId} in Proj {ProjId}.", pao.ArchOwnerId, dp.ProjId);
+                            throw;
+                        }
+                    }
+
+                    // 3) Rebuild PHLs from Contractors
+                    foreach (var pcon in projCons)
+                    {
+                        try
+                        {
+                            var con = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(c => c.Id == pcon.ConId);
+                            var conNameTrim = (con?.Name ?? "Unknown Contractor").Trim();
+
+                            // Ensure BE (and default contact) exist
+                            var beId = EnsureBusinessEntityForCon(pcon.ConId ?? 0);
+
+                            UpsertPhlForProjCon(pcon, pcnwProj, beId, conNameTrim);
+                        }
+                        catch (DbUpdateException dbxCon)
+                        {
+                            _logger.LogError(dbxCon, "DB error inserting PhlInfo for Con {ConId} in Proj {ProjId}.", pcon.ConId, dp.ProjId);
+                            throw;
+                        }
+                        catch (Exception exCon)
+                        {
+                            _logger.LogError(exCon, "Unhandled error inserting PhlInfo for Con {ConId} in Proj {ProjId}.", pcon.ConId, dp.ProjId);
+                            throw;
+                        }
+                    }
+
+                    tx.Commit();
+                    _logger.LogInformation("Finished replace (commit) for PCNW ProjId {ProjId}.", dp.ProjId);
                 }
-
-                _logger.LogInformation("Finished backfill for PCNW ProjId {ProjId}", dp.ProjId);
+                catch (Exception exTx)
+                {
+                    _logger.LogError(exTx, "Replace failed in transaction for Proj {ProjId}. Rolling back.", dp.ProjId);
+                    try { tx.Rollback(); } catch (Exception exRb) { _logger.LogError(exRb, "Rollback failed for Proj {ProjId}.", dp.ProjId); }
+                    // Continue with next project
+                }
             }
-            catch (Exception ex)
+            catch (Exception exProj)
             {
-                _logger.LogError(ex, "Backfill failed for PCNW ProjId {ProjId}, SyncProId {SyncProId}", dp.ProjId, dp.SyncProId);
+                _logger.LogError(exProj, "Backfill failed for PCNW ProjId {ProjId}, SyncProId {SyncProId}", dp.ProjId, dp.SyncProId);
             }
         }
     }
 
-
-    private static SqlParameter ToIntTvp(string name, IEnumerable<int> values)
-    {
-        var table = new DataTable();
-        table.Columns.Add("Value", typeof(int));
-        foreach (var v in values)
-            table.Rows.Add(v);
-
-        return new SqlParameter(name, SqlDbType.Structured)
-        {
-            TypeName = "dbo.IntList",  // must match the type you created in SQL Server
-            Value = table
-        };
-    }
 
 
 }

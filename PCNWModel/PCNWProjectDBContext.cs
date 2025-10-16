@@ -40,6 +40,7 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
     public virtual DbSet<TblFileStorage> FileStorages{ get; set; }
     public virtual DbSet<PhlInfo> PhlInfos { get; set; }
     public virtual DbSet<ProjectTraffic> ProjectTraffics { get; set; }
+    public virtual DbSet<TblEntityType> EntityTypes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

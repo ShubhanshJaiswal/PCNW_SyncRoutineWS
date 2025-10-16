@@ -39,6 +39,7 @@ public partial class OCPCProjectDBContext : DbContext
     public virtual DbSet<TblProjCounty> TblProjCounties { get; set; }
 
     public virtual DbSet<TblProject> TblProjects { get; set; }
+    public virtual DbSet<TblAOType> TblAOTypes { get; set; }
     public virtual DbSet<TblProjFieldChng> TblProjFieldChngs { get; set; }
 
   

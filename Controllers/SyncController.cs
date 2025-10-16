@@ -2784,7 +2784,7 @@ public class SyncController
             var addr = new Address
             {
                 BusinessEntityId = be.BusinessEntityId,
-                AddressName = "Main Address",
+                AddressName = "Mail Address",
                 Addr1 = ao.Addr1,
                 City = ao.City,
                 State = ao.State,
@@ -2872,7 +2872,7 @@ public class SyncController
             var addr = new Address
             {
                 BusinessEntityId = be.BusinessEntityId,
-                AddressName = "Main Address",
+                AddressName = "Mail Address",
                 Addr1 = con.Addr1,
                 City = con.City,
                 State = con.State,
@@ -2925,7 +2925,7 @@ public class SyncController
             var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == businessEntityId);
             if (address != null)
             {
-                address.AddressName = "Main Address";
+                address.AddressName = "Mail Address";
                 address.Addr1 = con.Addr1 ?? "";
                 address.City = con.City ?? "";
                 address.State = con.State ?? "";
@@ -2941,7 +2941,7 @@ public class SyncController
                 var addr = new Address
                 {
                     BusinessEntityId = businessEntityId,
-                    AddressName = "Main Address",
+                    AddressName = "Mail Address",
                     Addr1 = con.Addr1 ?? "",
                     City = con.City ?? "",
                     State = con.State,
@@ -2993,7 +2993,7 @@ public class SyncController
             var address = _PCNWContext.Addresses.FirstOrDefault(a => a.BusinessEntityId == businessEntityId);
             if (address != null)
             {
-                address.AddressName = "Main Address";
+                address.AddressName = "Mail Address";
                 address.Addr1 = arch.Addr1 ?? "";
                 address.City = arch.City ?? "";
                 address.State = arch.State ?? "";
@@ -3009,7 +3009,7 @@ public class SyncController
                 var addr = new Address
                 {
                     BusinessEntityId = businessEntityId,
-                    AddressName = "Main Address",
+                    AddressName = "Mail Address",
                     Addr1 = arch.Addr1 ?? "",
                     City = arch.City ?? "" ?? "",
                     State = arch.State,
@@ -3047,7 +3047,7 @@ public class SyncController
             var entity = new Entity
             {
                 EnityName = aoName,
-                EntityType = srcPao.AotypeId.ToString(),
+                EntityType = FetchAOTypeID(srcPao.AotypeId).ToString(),
                 ProjId = pcnwProj.ProjId,
                 ProjNumber = int.TryParse(pcnwProj.ProjNumber, out var pn) ? pn : (int?)null,
                 IsActive = pcnwProj.IsActive,
@@ -3056,7 +3056,7 @@ public class SyncController
                 ChkIssue = false,
                 CompType = 3,
                 SyncStatus = 0,
-                SyncProjAoid = srcPao.ArchOwnerId
+                SyncProjAoid = srcPao.ProjAo
             };
 
             // IMPORTANT: never set EntityId; let identity generate
@@ -3136,6 +3136,58 @@ public class SyncController
             throw;
         }
     }
+
+
+    private int FetchAOTypeID(int? aotypeid)
+    {
+        if (!aotypeid.HasValue)
+            return 0;
+
+        int entityTypeId = aotypeid.Value;
+
+        // Step 1: Get AO Type from source context
+        var ocpcAOType = _OCOCContext.TblAOTypes
+            .AsNoTracking()
+            .FirstOrDefault(m => m.AOTypeID == entityTypeId);
+
+        // If no match in OCOC, just return input ID (or 0/null depending on logic)
+        if (ocpcAOType == null)
+            return entityTypeId;
+
+        // Step 2: Try to find entity in PCNW context by same ID
+        var pcnwEntityType = _PCNWContext.EntityTypes
+            .AsNoTracking()
+            .FirstOrDefault(m => m.EntityID == entityTypeId);
+
+        // If found and AOType matches exactly
+        if (pcnwEntityType != null &&
+            string.Equals(pcnwEntityType.EntityType, ocpcAOType.AOType, StringComparison.OrdinalIgnoreCase))
+        {
+            return pcnwEntityType.EntityID;
+        }
+
+        // Step 3: Try to find by AOType name if not matching by ID
+        var pcnwMatchedEntity = _PCNWContext.EntityTypes
+            .AsNoTracking()
+            .FirstOrDefault(m => m.EntityType == ocpcAOType.AOType);
+
+        if (pcnwMatchedEntity != null)
+            return pcnwMatchedEntity.EntityID;
+
+        // Step 4: Create new entity type if not found
+        var newEntityType = new TblEntityType
+        {
+            EntityType = ocpcAOType.AOType,
+            IsActive = true,
+            SortOrder = 0
+        };
+
+        _PCNWContext.EntityTypes.Add(newEntityType);
+        _PCNWContext.SaveChanges();
+
+        return newEntityType.EntityID;
+    }
+
     private int AddDefaultContact(int businessEntityId, int compType)
     {
         using var scope = _logger.BeginScope(new Dictionary<string, object>

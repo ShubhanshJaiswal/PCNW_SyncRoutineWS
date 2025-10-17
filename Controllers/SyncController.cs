@@ -1520,7 +1520,9 @@ public class SyncController
                     BusinessEntity propBussEnt;
                     _logger.LogInformation($"Member ID {member.Id} sync started.");
 
-                    if (!_PCNWContext.BusinessEntities.Any(be => be.SyncMemId == member.Id)) { member.SyncStatus = 1; tblOCPCContact.ForEach(c => c.SyncStatus = 1); }
+                    var contacts = tblOCPCContact.Where(m=>m.Id==member.Id).ToList();
+
+                    if (!_PCNWContext.BusinessEntities.Any(be => be.SyncMemId == member.Id)) { member.SyncStatus = 1; contacts.ForEach(c => c.SyncStatus = 1); }
                     // Processing based on SyncStatus
                     switch (member.SyncStatus)
                     {
@@ -1591,7 +1593,6 @@ public class SyncController
                     _logger.LogInformation($"Member ID {member.Id} successfully updated to BusinessEntity and related tables.");
 
                     // Process associated contacts
-                    var contacts = tblOCPCContact;
                     _logger.LogInformation($"Total Contacts {contacts.Count()} found for Member ID {member.Id}.");
 
                     foreach (var contact in contacts)

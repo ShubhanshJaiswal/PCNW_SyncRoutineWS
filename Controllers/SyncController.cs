@@ -77,17 +77,16 @@ public class SyncController
             // OPTIONAL pipelines (kept exactly as comments, just organized)
             // ──────────────────────────────────────────────────────────────────────────
 
-            // // Member Sync
-            // // var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
-            // // var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
-            // // var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-            // //                      where (!(memids.Contains(mem.Id)) && mem.Id == 10987)
-            // //                      select mem).OrderBy(m => m.Id)
-            // //                     .AsNoTracking().ToList();
-            // // var memberids = tblOCPCMember.Select(m => m.Id).ToList();
-            // // var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().ToList();
-            // // tblOCPCContact = tblOCPCContact.Where(m => memberids.Contains(m.Id)).ToList();
-            // // ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+            //Member Sync
+             var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
+            var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
+            var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+                                 where (!(memids.Contains(mem.Id)))
+                                 select mem).OrderBy(m => m.Id)
+                                .AsNoTracking().ToList();
+            var memberids = tblOCPCMember.Select(m => m.Id).ToList();
+            var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
+            ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
             // // Arch Owners
             // // var tblArch = _OCOCContext.TblArchOwners
@@ -1757,45 +1756,109 @@ public class SyncController
                 }
             }
 
-            Address propAdd;
+            var mailAddressObj = _PCNWContext.Addresses
+                .FirstOrDefault(a => a.BusinessEntityId == lastBusinessEntityId && a.AddressName == "Mail Address");
+
             if (member.SyncStatus == 1)
             {
-                propAdd = new Address();
-                propAdd.BusinessEntityId = lastBusinessEntityId;
-                propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
-                propAdd.City = member.BillCity ?? member.MailCity ?? "";
-                propAdd.State = member.BillState ?? member.MailState ?? "";
-                propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
-                propAdd.SyncStatus = 0;
-                propAdd.SyncMemId = member.Id;
-                _ = _PCNWContext.Addresses.Add(propAdd);
+                // Always insert new Mail Address
+                var newMailAddress = new Address
+                {
+                    BusinessEntityId = lastBusinessEntityId,
+                    AddressName = "Mail Address",
+                    Addr1 = member.MailAddress ?? member.BillAddress ?? "",
+                    City = member.MailCity ?? member.BillCity ?? "",
+                    State = member.MailState ?? member.BillState ?? "",
+                    Zip = member.MailZip ?? member.BillZip ?? "",
+                    SyncStatus = 0,
+                    SyncMemId = member.Id
+                };
+                _PCNWContext.Addresses.Add(newMailAddress);
             }
             else
             {
-                propAdd = (from add in _PCNWContext.Addresses where add.BusinessEntityId == lastBusinessEntityId select add).FirstOrDefault();
-                if (propAdd == null)
+                if (mailAddressObj == null)
                 {
-                    propAdd = new Address();
-                    propAdd.BusinessEntityId = lastBusinessEntityId;
-                    propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
-                    propAdd.City = member.BillCity ?? member.MailCity ?? "";
-                    propAdd.State = member.BillState ?? member.MailState ?? "";
-                    propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
-                    propAdd.SyncStatus = 0;
-                    propAdd.SyncMemId = member.Id;
-                    _ = _PCNWContext.Addresses.Add(propAdd);
+                    // Insert new Mail Address if not found
+                    var newMailAddress = new Address
+                    {
+                        BusinessEntityId = lastBusinessEntityId,
+                        AddressName = "Mail Address",
+                        Addr1 = member.MailAddress ?? member.BillAddress ?? "",
+                        City = member.MailCity ?? member.BillCity ?? "",
+                        State = member.MailState ?? member.BillState ?? "",
+                        Zip = member.MailZip ?? member.BillZip ?? "",
+                        SyncStatus = 0,
+                        SyncMemId = member.Id
+                    };
+                    _PCNWContext.Addresses.Add(newMailAddress);
                 }
                 else
                 {
-                    propAdd.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
-                    propAdd.City = member.BillCity ?? member.MailCity ?? "";
-                    propAdd.State = member.BillState ?? member.MailState ?? "";
-                    propAdd.Zip = member.BillZip ?? member.MailZip ?? "";
+                    // Update existing Mail Address
+                    mailAddressObj.Addr1 = member.MailAddress ?? member.BillAddress ?? "";
+                    mailAddressObj.City = member.MailCity ?? member.BillCity ?? "";
+                    mailAddressObj.State = member.MailState ?? member.BillState ?? "";
+                    mailAddressObj.Zip = member.MailZip ?? member.BillZip ?? "";
 
-                    _PCNWContext.Update(propAdd);
-                    _PCNWContext.Entry(propAdd).Property(p => p.SyncStatus).IsModified = true;
+                    _PCNWContext.Update(mailAddressObj);
+                    _PCNWContext.Entry(mailAddressObj).Property(p => p.SyncStatus).IsModified = true;
                 }
+            }
 
+
+            // --- Bill Address ---
+            if (!string.IsNullOrWhiteSpace(member.BillAddress))
+            {
+                var billAddressObj = _PCNWContext.Addresses
+                    .FirstOrDefault(a => a.BusinessEntityId == lastBusinessEntityId && a.AddressName == "Bill Address");
+
+                if (member.SyncStatus == 1)
+                {
+                    // Always insert new Bill Address
+                    var newBillAddress = new Address
+                    {
+                        BusinessEntityId = lastBusinessEntityId,
+                        AddressName = "Bill Address",
+                        Addr1 = member.BillAddress ?? member.MailAddress ?? "",
+                        City = member.BillCity ?? member.MailCity ?? "",
+                        State = member.BillState ?? member.MailState ?? "",
+                        Zip = member.BillZip ?? member.MailZip ?? "",
+                        SyncStatus = 0,
+                        SyncMemId = member.Id
+                    };
+                    _PCNWContext.Addresses.Add(newBillAddress);
+                }
+                else
+                {
+                    if (billAddressObj == null)
+                    {
+                        // Insert new Bill Address if not found
+                        var newBillAddress = new Address
+                        {
+                            BusinessEntityId = lastBusinessEntityId,
+                            AddressName = "Bill Address",
+                            Addr1 = member.BillAddress ?? member.MailAddress ?? "",
+                            City = member.BillCity ?? member.MailCity ?? "",
+                            State = member.BillState ?? member.MailState ?? "",
+                            Zip = member.BillZip ?? member.MailZip ?? "",
+                            SyncStatus = 0,
+                            SyncMemId = member.Id
+                        };
+                        _PCNWContext.Addresses.Add(newBillAddress);
+                    }
+                    else
+                    {
+                        // Update existing Bill Address
+                        billAddressObj.Addr1 = member.BillAddress ?? member.MailAddress ?? "";
+                        billAddressObj.City = member.BillCity ?? member.MailCity ?? "";
+                        billAddressObj.State = member.BillState ?? member.MailState ?? "";
+                        billAddressObj.Zip = member.BillZip ?? member.MailZip ?? "";
+
+                        _PCNWContext.Update(billAddressObj);
+                        _PCNWContext.Entry(billAddressObj).Property(p => p.SyncStatus).IsModified = true;
+                    }
+                }
             }
             _ = _PCNWContext.SaveChanges();
             _logger.LogInformation($"Member and Address tables updated for Member ID {member.Id} with BusinessEntityID {lastBusinessEntityId}");

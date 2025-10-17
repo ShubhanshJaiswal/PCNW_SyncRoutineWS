@@ -1,5 +1,8 @@
-﻿namespace SyncRoutineWS.PCNWModel;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
+namespace SyncRoutineWS.PCNWModel;
+
+[Table("Member")]
 public partial class Member
 {
     public int MemberId { get; set; }

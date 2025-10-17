@@ -237,7 +237,11 @@ public partial class PCNWProjectDBContext : IdentityDbContext<IdentityUser>
 
         modelBuilder.Entity<Member>(entity =>
         {
-            entity.ToTable("Member");
+            entity.ToTable(tb =>
+            {
+                tb.HasTrigger("trg_AfterInsert_Member_updatingDirectoryCheck");
+            });
+            ;
 
             entity.Property(e => e.MemberId).HasColumnName("MemberID");
             entity.Property(e => e.AcceptedTermsDt).HasColumnType("datetime");

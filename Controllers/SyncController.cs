@@ -50,28 +50,28 @@ public class SyncController
             _userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
 
             // 1) Environment / prerequisites
-            ValidateBaseDirectory(_fileUploadPath);
+            //ValidateBaseDirectory(_fileUploadPath);
 
-            // 2) Core project sync from OCPC → PCNW
-            var syncedProjectIds = GetSyncedProjectIds();
-            var cutoff = GetRetentionCutoffOrNull();
-            var (projectsForCreateOrRefresh, projectIdsForCreateOrRefresh) = LoadProjectsForInitialSync(syncedProjectIds, cutoff);
-            var countiesForCreateOrRefresh = LoadCountiesForProjects(projectIdsForCreateOrRefresh);
-            ProcessProjectFunctionality(projectsForCreateOrRefresh, countiesForCreateOrRefresh);
+            //// 2) Core project sync from OCPC → PCNW
+            //var syncedProjectIds = GetSyncedProjectIds();
+            //var cutoff = GetRetentionCutoffOrNull();
+            //var (projectsForCreateOrRefresh, projectIdsForCreateOrRefresh) = LoadProjectsForInitialSync(syncedProjectIds, cutoff);
+            //var countiesForCreateOrRefresh = LoadCountiesForProjects(projectIdsForCreateOrRefresh);
+            //ProcessProjectFunctionality(projectsForCreateOrRefresh, countiesForCreateOrRefresh);
 
-            // 3) Process field-change driven updates
-            var (updateProjects, updateProjCounties) = LoadProjectsForFieldChangeUpdates();
-            UpdateProjectFunctionality(updateProjects, updateProjCounties);
+            //// 3) Process field-change driven updates
+            //var (updateProjects, updateProjCounties) = LoadProjectsForFieldChangeUpdates();
+            //UpdateProjectFunctionality(updateProjects, updateProjCounties);
 
-            // 4) Files/folders + storage hygiene
-            CreateRecentProjectDirectories();
-            await CleanupStorageByPolicyAsync().ConfigureAwait(false);
-            await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
+            //// 4) Files/folders + storage hygiene
+            //CreateRecentProjectDirectories();
+            //await CleanupStorageByPolicyAsync().ConfigureAwait(false);
+            //await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
-            // 5) Data backfill / repair passes
-            //AddDefaultContact(18058, 3);
-            // BackfillAoEntityAndPhlForExistingSyncedProjects();
-            FixMismatchedCountyAssignments();
+            //// 5) Data backfill / repair passes
+            ////AddDefaultContact(18058, 3);
+            //// BackfillAoEntityAndPhlForExistingSyncedProjects();
+            //FixMismatchedCountyAssignments();
 
             // ──────────────────────────────────────────────────────────────────────────
             // OPTIONAL pipelines (kept exactly as comments, just organized)
@@ -84,7 +84,7 @@ public class SyncController
                                  where (!(memids.Contains(mem.Id)))
                                  select mem).OrderBy(m => m.Id)
                                 .AsNoTracking().ToList();
-            var memberids = tblOCPCMember.Select(m => m.Id).ToList();
+            var memberids = tblOCPCMember.Select(m => m.Id).ToHashSet();
             var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
             ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
@@ -1579,7 +1579,7 @@ public class SyncController
                                 _PCNWContext.BusinessEntities.Add(propBussEnt);
                                 _PCNWContext.SaveChanges();
                                 _logger.LogInformation($"Member ID {member.Id} added to BusinessEntity.");
-                                lastBusinessEntityId = _PCNWContext.BusinessEntities.Max(be => be.BusinessEntityId);
+                                lastBusinessEntityId = propBussEnt.BusinessEntityId;
                             }
                             break;
 
@@ -1613,15 +1613,41 @@ public class SyncController
                                     {
                                         var user = new IdentityUser { Email = contact.Email, UserName = contact.Email };
                                         var result = _userManager.CreateAsync(user, contact.Password).GetAwaiter().GetResult();
-                                        if (!result.Succeeded) throw new Exception($"Error creating user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
 
-                                        var addRole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
-                                        if (!addRole.Succeeded) throw new Exception($"Error adding role: {string.Join(", ", addRole.Errors.Select(e => e.Description))}");
+                                        if (!result.Succeeded)
+                                        {
+                                            if (result.Errors.Any(e => e.Code == "DuplicateUserName"))
+                                            {
+                                                user = _userManager.FindByEmailAsync(contact.Email).GetAwaiter().GetResult();
 
-                                        if (!Guid.TryParse(user.Id, out userId)) throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
+                                                if (user == null)
+                                                    throw new Exception($"DuplicateUserName error, but user '{contact.Email}' not found.");
+
+                                                var roles = _userManager.GetRolesAsync(user).GetAwaiter().GetResult();
+                                                if (!roles.Contains("Member"))
+                                                {
+                                                    var addRole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
+                                                    if (!addRole.Succeeded)
+                                                        throw new Exception($"Error adding role: {string.Join(", ", addRole.Errors.Select(e => e.Description))}");
+                                                }
+                                            }
+                                            else
+                                            {
+                                                throw new Exception($"Error creating user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            var addRole = _userManager.AddToRoleAsync(user, "Member").GetAwaiter().GetResult();
+                                            if (!addRole.Succeeded)
+                                                throw new Exception($"Error adding role: {string.Join(", ", addRole.Errors.Select(e => e.Description))}");
+                                        }
+                                        if (!Guid.TryParse(user.Id, out userId))
+                                            throw new Exception($"User ID '{user.Id}' is not a valid GUID.");
 
                                         mainContactExists = _PCNWContext.Contacts.Any(c => c.BusinessEntityId == lastBusinessEntityId && c.MainContact == true);
                                     }
+
 
                                     propCont = new Contact
                                     {
@@ -1758,6 +1784,7 @@ public class SyncController
                 }
             }
 
+            _ = _PCNWContext.SaveChanges();
             var mailAddressObj = _PCNWContext.Addresses
                 .FirstOrDefault(a => a.BusinessEntityId == lastBusinessEntityId && a.AddressName == "Mail Address");
 

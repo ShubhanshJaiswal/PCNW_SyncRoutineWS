@@ -1520,6 +1520,7 @@ public class SyncController
                     BusinessEntity propBussEnt;
                     _logger.LogInformation($"Member ID {member.Id} sync started.");
 
+                    if (!_PCNWContext.BusinessEntities.Any(be => be.SyncMemId == member.Id)) { member.SyncStatus = 1; tblOCPCContact.ForEach(c => c.SyncStatus = 1); }
                     // Processing based on SyncStatus
                     switch (member.SyncStatus)
                     {

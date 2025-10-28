@@ -68,9 +68,22 @@ public class SyncController
             //await CleanupStorageByPolicyAsync().ConfigureAwait(false);
             //await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
+
+            //Architect and Contractor
+            //var archownerIDlist = _OCOCContext.TblArchOwners
+            //   .Where(arch => arch.SyncStatus == 1)
+            //   .AsNoTracking().Select(m => m.Id).ToList();
+            //ProcessArchOwnerOnlyFunctionality(archownerIDlist);
+
+            //var contractorIDlist = _OCOCContext.TblContractors
+            //  .Where(c => c.SyncStatus == 1)
+            //  .AsNoTracking().Select(m => m.Id).ToList();
+            //ProcessContractorOnlyFunctionality(contractorIDlist);
+
             //// 5) Data backfill / repair passes
             ////AddDefaultContact(18058, 3);
             //// BackfillAoEntityAndPhlForExistingSyncedProjects();
+            BackfillArchitectsandContractors();
             //FixMismatchedCountyAssignments();
 
             // ──────────────────────────────────────────────────────────────────────────
@@ -78,33 +91,38 @@ public class SyncController
             // ──────────────────────────────────────────────────────────────────────────
 
             //Member Sync
-             var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
-            var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
-            var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-                                 where (!(memids.Contains(mem.Id)))
-                                 select mem).OrderBy(m => m.Id)
-                                .AsNoTracking().ToList();
-            var memberids = tblOCPCMember.Select(m => m.Id).ToHashSet();
-            var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
-            ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+            //var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
+            //var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
+            //var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+            //                     where (!(memids.Contains(mem.Id)))
+            //                     select mem).OrderBy(m => m.Id)
+            //                    .AsNoTracking().ToList();
+            //var memberids = tblOCPCMember.Select(m => m.Id).ToHashSet();
+            //var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
+            //ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
-            // // Arch Owners
-            // // var tblArch = _OCOCContext.TblArchOwners
-            // //     .Where(arch => (arch.SyncStatus == 1 && !businessEntityEmails.Contains(arch.Email)) || arch.SyncStatus == 2)
-            // //     .AsNoTracking().ToList();
-            // // var tblProArc = _OCOCContext.TblProjAos
-            // //     .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
-            // //     .AsNoTracking().ToList();
-            // // ProcessArchOwnerFunctionality(tblArch, tblProArc);
+            //Arch Owners
+            // var tblArch = _OCOCContext.TblArchOwners
+            //     .Where(arch => (arch.SyncStatus == 1 && !businessEntityEmails.Contains(arch.Email)) || arch.SyncStatus == 2)
+            //     .AsNoTracking().ToList();
+            //var tblProArc = _OCOCContext.TblProjAos
+            //    .Where(po => po.SyncStatus == 1 || po.SyncStatus == 2)
+            //    .AsNoTracking().ToList();
+            //ProcessArchOwnerFunctionality(tblArch, tblProArc);
 
-            // // Contractors
-            // // var tblCont = _OCOCContext.TblContractors
-            // //     .Where(cont => (cont.SyncStatus == 1 && !businessEntityEmails.Contains(cont.Email)) || cont.SyncStatus == 2)
-            // //     .AsNoTracking().ToList();
-            // // var tblProCon = _OCOCContext.TblProjCons
-            // //     .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
-            // //     .AsNoTracking().ToList();
-            // // ProcessContractorFunctionality(tblCont, tblProCon);
+
+           
+
+
+
+            // Contractors
+            //var tblCont = _OCOCContext.TblContractors
+            //    .Where(cont => (cont.SyncStatus == 1 && !businessEntityEmails.Contains(cont.Email)) || cont.SyncStatus == 2)
+            //    .AsNoTracking().ToList();
+            //var tblProCon = _OCOCContext.TblProjCons
+            //    .Where(pc => pc.SyncStatus == 1 || pc.SyncStatus == 2)
+            //    .AsNoTracking().ToList();
+            //ProcessContractorFunctionality(tblCont, tblProCon);
 
             // // Addenda
             // // var tblAddenda = _OCOCContext.TblAddenda
@@ -125,6 +143,39 @@ public class SyncController
         }
     }
 
+
+    private void BackfillArchitectsandContractors()
+    {
+        var archownerIDlist = _OCOCContext.TblArchOwners.AsNoTracking().Select(m => m.Id).ToList();
+
+        foreach (var id in archownerIDlist)
+        {
+            EnsureBusinessEntityForAo(id, IsBackFill : true);
+        }
+
+        var contractorIDlist = _OCOCContext.TblContractors.AsNoTracking().Select(m => m.Id).ToList();
+
+        foreach (var id in contractorIDlist)
+        {
+            EnsureBusinessEntityForCon(id, IsBackFill : true);
+        }
+
+    }
+
+    private void ProcessArchOwnerOnlyFunctionality(List<int> archownerIDlist)
+    {
+        foreach (var id in archownerIDlist)
+        {
+            EnsureBusinessEntityForAo(id);
+        }
+    }
+    private void ProcessContractorOnlyFunctionality(List<int> contractorIDlist)
+    {
+        foreach (var id in contractorIDlist)
+        {
+            EnsureBusinessEntityForCon(id);
+        }
+    }
     // ──────────────────────────────────────────────────────────────────────────────
     // Helpers (focused, testable, and re-usable)
     // ──────────────────────────────────────────────────────────────────────────────
@@ -2805,7 +2856,7 @@ public class SyncController
             throw;
         }
     }
-    private int EnsureBusinessEntityForAo(int aoId)
+    private int EnsureBusinessEntityForAo(int aoId, bool IsBackFill = false)
     {
         using var scope = _logger.BeginScope(new Dictionary<string, object> { ["AOId"] = aoId });
 
@@ -2819,6 +2870,14 @@ public class SyncController
             if (be != null)
             {
                 _logger.LogInformation("BusinessEntity already exists for AO {AOId}: BE {BusinessEntityId}.", aoId, be.BusinessEntityId);
+                if (IsBackFill)
+                {
+                    var obj = _OCOCContext.TblArchOwners.AsNoTracking().FirstOrDefault(x => x.Id == aoId);
+                    if (obj != null)
+                    {
+                        UpdateArchitectInfo(obj, be.BusinessEntityId);
+                    }
+                }
                 return be.BusinessEntityId;
             }
 
@@ -2842,7 +2901,7 @@ public class SyncController
                         || x.BusinessEntityName.Trim() == aoNameTrim
                         || x.BusinessEntityName.ToLower() == aoNameLower
                         || x.BusinessEntityName.Trim().ToLower() == aoNameLower
-                    )
+                    ) && x.SyncAoid == null  
                 );
 
             if (be != null)
@@ -2901,7 +2960,7 @@ public class SyncController
             throw;
         }
     }
-    private int EnsureBusinessEntityForCon(int conId)
+    private int EnsureBusinessEntityForCon(int conId, bool IsBackFill = false)
     {
         using var scope = _logger.BeginScope(new Dictionary<string, object> { ["ConId"] = conId });
 
@@ -2911,6 +2970,14 @@ public class SyncController
             if (be != null)
             {
                 _logger.LogInformation("BusinessEntity already exists for Contractor {ConId}: BE {BusinessEntityId}.", conId, be.BusinessEntityId);
+                if (IsBackFill)
+                {
+                    var obj = _OCOCContext.TblContractors.AsNoTracking().FirstOrDefault(x => x.Id == conId);
+                    if (obj != null)
+                    {
+                        UpdateContractorInfo(obj, be.BusinessEntityId);
+                    }
+                }
                 return be.BusinessEntityId;
             }
 
@@ -2933,7 +3000,7 @@ public class SyncController
                         || x.BusinessEntityName.Trim() == conNameTrim
                         || x.BusinessEntityName.ToLower() == conNameLower
                         || x.BusinessEntityName.Trim().ToLower() == conNameLower
-                    )
+                    ) && x.SyncConId == null
                 );
 
             if (be != null)

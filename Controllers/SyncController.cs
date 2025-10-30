@@ -50,56 +50,56 @@ public class SyncController
             _userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
 
             // 1) Environment / prerequisites
-            //ValidateBaseDirectory(_fileUploadPath);
+            ValidateBaseDirectory(_fileUploadPath);
 
-            //// 2) Core project sync from OCPC → PCNW
-            //var syncedProjectIds = GetSyncedProjectIds();
-            //var cutoff = GetRetentionCutoffOrNull();
-            //var (projectsForCreateOrRefresh, projectIdsForCreateOrRefresh) = LoadProjectsForInitialSync(syncedProjectIds, cutoff);
-            //var countiesForCreateOrRefresh = LoadCountiesForProjects(projectIdsForCreateOrRefresh);
-            //ProcessProjectFunctionality(projectsForCreateOrRefresh, countiesForCreateOrRefresh);
+            // 2) Core project sync from OCPC → PCNW
+            var syncedProjectIds = GetSyncedProjectIds();
+            var cutoff = GetRetentionCutoffOrNull();
+            var (projectsForCreateOrRefresh, projectIdsForCreateOrRefresh) = LoadProjectsForInitialSync(syncedProjectIds, cutoff);
+            var countiesForCreateOrRefresh = LoadCountiesForProjects(projectIdsForCreateOrRefresh);
+            ProcessProjectFunctionality(projectsForCreateOrRefresh, countiesForCreateOrRefresh);
 
-            //// 3) Process field-change driven updates
-            //var (updateProjects, updateProjCounties) = LoadProjectsForFieldChangeUpdates();
-            //UpdateProjectFunctionality(updateProjects, updateProjCounties);
+            // 3) Process field-change driven updates
+            var (updateProjects, updateProjCounties) = LoadProjectsForFieldChangeUpdates();
+            UpdateProjectFunctionality(updateProjects, updateProjCounties);
 
-            //// 4) Files/folders + storage hygiene
-            //CreateRecentProjectDirectories();
-            //await CleanupStorageByPolicyAsync().ConfigureAwait(false);
-            //await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
+            // 4) Files/folders + storage hygiene
+            CreateRecentProjectDirectories();
+            await CleanupStorageByPolicyAsync().ConfigureAwait(false);
+            await SyncFilesFromLiveToBetaAsync().ConfigureAwait(false);
 
 
             //Architect and Contractor
-            //var archownerIDlist = _OCOCContext.TblArchOwners
-            //   .Where(arch => arch.SyncStatus == 1)
-            //   .AsNoTracking().Select(m => m.Id).ToList();
-            //ProcessArchOwnerOnlyFunctionality(archownerIDlist);
+            var archownerIDlist = _OCOCContext.TblArchOwners
+               .Where(arch => arch.SyncStatus == 1)
+               .AsNoTracking().Select(m => m.Id).ToList();
+            ProcessArchOwnerOnlyFunctionality(archownerIDlist);
 
-            //var contractorIDlist = _OCOCContext.TblContractors
-            //  .Where(c => c.SyncStatus == 1)
-            //  .AsNoTracking().Select(m => m.Id).ToList();
-            //ProcessContractorOnlyFunctionality(contractorIDlist);
+            var contractorIDlist = _OCOCContext.TblContractors
+              .Where(c => c.SyncStatus == 1)
+              .AsNoTracking().Select(m => m.Id).ToList();
+            ProcessContractorOnlyFunctionality(contractorIDlist);
 
-            //// 5) Data backfill / repair passes
-            ////AddDefaultContact(18058, 3);
-            //// BackfillAoEntityAndPhlForExistingSyncedProjects();
-            BackfillArchitectsandContractors();
-            //FixMismatchedCountyAssignments();
+            // 5) Data backfill / repair passes
+            //AddDefaultContact(18058, 3);
+            // BackfillAoEntityAndPhlForExistingSyncedProjects();
+           // BackfillArchitectsandContractors();
+            FixMismatchedCountyAssignments();
 
-            // ──────────────────────────────────────────────────────────────────────────
-            // OPTIONAL pipelines (kept exactly as comments, just organized)
-            // ──────────────────────────────────────────────────────────────────────────
+             //──────────────────────────────────────────────────────────────────────────
+             //OPTIONAL pipelines(kept exactly as comments, just organized)
+             //──────────────────────────────────────────────────────────────────────────
 
-            //Member Sync
-            //var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
-            //var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
-            //var tblOCPCMember = (from mem in _OCOCContext.TblMembers
-            //                     where (!(memids.Contains(mem.Id)))
-            //                     select mem).OrderBy(m => m.Id)
-            //                    .AsNoTracking().ToList();
-            //var memberids = tblOCPCMember.Select(m => m.Id).ToHashSet();
-            //var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
-            //ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
+           // Member Sync
+            var businessEntityEmails = _PCNWContext.BusinessEntities.Select(be => be.BusinessEntityEmail).ToHashSet();
+            var memids = _PCNWContext.BusinessEntities.Select(m => m.SyncMemId).ToHashSet();
+            var tblOCPCMember = (from mem in _OCOCContext.TblMembers
+                                 where (!(memids.Contains(mem.Id)))
+                                 select mem).OrderBy(m => m.Id)
+                                .AsNoTracking().ToList();
+            var memberids = tblOCPCMember.Select(m => m.Id).ToHashSet();
+            var tblOCPCContact = _OCOCContext.TblContacts.AsNoTracking().Where(m => memberids.Contains(m.Id)).ToList();
+            ProcessMemberFunctionality(tblOCPCMember, tblOCPCContact);
 
             //Arch Owners
             // var tblArch = _OCOCContext.TblArchOwners
@@ -111,7 +111,7 @@ public class SyncController
             //ProcessArchOwnerFunctionality(tblArch, tblProArc);
 
 
-           
+
 
 
 
@@ -1229,7 +1229,10 @@ public class SyncController
                         propProject.Story = proj.Story;
                         propProject.StoryUnf = proj.StoryUnf;
                         propProject.StrAddenda = proj.StrAddenda;
-                        propProject.StrBidDt = proj.StrBidDt;
+
+
+                        //propProject.StrBidDt = proj.StrBidDt;
+                        propProject.StrBidDt = FormatBidDateString(proj.BidDt);;
                         propProject.StrBidDt2 = proj.StrBidDt2;
                         propProject.StrBidDt3 = proj.StrBidDt3;
                         propProject.StrBidDt4 = proj.StrBidDt4;
@@ -1461,7 +1464,8 @@ public class SyncController
                         Story = proj.Story,
                         StoryUnf = proj.StoryUnf,
                         StrAddenda = proj.StrAddenda,
-                        StrBidDt = proj.StrBidDt,
+                        //StrBidDt = proj.StrBidDt,
+                        StrBidDt = FormatBidDateString(proj.BidDt),
                         StrBidDt2 = proj.StrBidDt2,
                         StrBidDt3 = proj.StrBidDt3,
                         StrBidDt4 = proj.StrBidDt4,
@@ -3533,5 +3537,39 @@ public class SyncController
     }
 
 
+    public string FormatBidDateString(DateTime? Biddt, bool isCob = false)
+    {
+        if (Biddt == null)
+            return string.Empty;
+
+        DateTime bidDate = Convert.ToDateTime(Biddt);
+        string formattedDate = bidDate.ToString("MMM dd");
+
+        int hour24 = bidDate.Hour;
+        int minute = bidDate.Minute;
+
+        // EOD (00:00)
+        if (hour24 == 0 && minute == 0 && !isCob)
+            return $"{formattedDate} - EOD";
+
+        // COB special case (kept as-is)
+        if (hour24 == 0 && minute == 0 && isCob)
+            return $"{formattedDate} - COB";
+
+        // Determine AM/PM
+        string meridian = (hour24 >= 12) ? "PM" : "AM";
+
+        // Convert 24h → 12h (for display)
+        int displayHour = hour24 % 12;
+        if (displayHour == 0)
+            displayHour = 12;
+
+        // Only show minutes if non-zero
+        string minutePart = (minute == 0) ? "" : ":" + minute.ToString("00");
+
+        string timeFormatted = $"{displayHour}{minutePart} {meridian}";
+
+        return $"{formattedDate} - {timeFormatted}";
+    }
 
 }
